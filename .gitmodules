@@ -1,0 +1,51 @@
+[submodule "services/memento"]
+	path = services/memento
+	url = https://github.com/uengine-oss/process-gpt-memento.git
+[submodule "services/openai-deep-research"]
+	path = services/openai-deep-research
+	url = https://github.com/uengine-oss/process-gpt-openai-deep-research.git
+[submodule "services/react-voice-agent"]
+	path = services/react-voice-agent
+	url = https://github.com/uengine-oss/process-gpt-react-voice-agent.git
+[submodule "services/frontend"]
+	path = services/frontend
+	url = https://github.com/uengine-oss/process-gpt-vue3.git
+[submodule "services/completion"]
+	path = services/completion
+	url = https://github.com/uengine-oss/process-gpt-completion.git
+[submodule "services/agent-feedback"]
+	path = services/agent-feedback
+	url = https://github.com/uengine-oss/process-gpt-agent-feedback.git
+[submodule "services/mcp-validator"]
+	path = services/mcp-validator
+	url = https://github.com/uengine-oss/process-gpt-mcp-validator.git
+[submodule "services/a2a-orch"]
+	path = services/a2a-orch
+	url = https://github.com/uengine-oss/process-gpt-a2a-orch.git
+[submodule "services/bpmn-extractor"]
+	path = services/bpmn-extractor
+	url = https://github.com/uengine-oss/process-gpt-bpmn-extractor.git
+[submodule "services/computer-use"]
+	path = services/computer-use
+	url = https://github.com/uengine-oss/process-gpt-computer-use.git
+[submodule "services/deep-research"]
+	path = services/deep-research
+	url = https://github.com/uengine-oss/process-gpt-deep-research.git
+[submodule "services/office-mcp"]
+	path = services/office-mcp
+	url = https://github.com/uengine-oss/process-gpt-office-mcp.git
+[submodule "services/analytic"]
+	path = services/analytic
+	url = https://github.com/uengine-oss/process-gpt-analytic.git
+[submodule "services/instance-classifier"]
+	path = services/instance-classifier
+	url = https://github.com/uengine-oss/process-gpt-instance-classifier.git
+[submodule "services/strategy"]
+	path = services/strategy
+	url = https://github.com/uengine-oss/process-gpt-strategy.git
+[submodule "services/base-agent-langchain-react"]
+	path = services/base-agent-langchain-react
+	url = https://github.com/uengine-oss/process-gpt-base-agent-langchain-react.git
+[submodule "services/deepagents"]
+	path = services/deepagents
+	url = https://github.com/uengine-oss/process-gpt-deepagents.git

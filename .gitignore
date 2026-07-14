@@ -1,0 +1,8 @@
+# Runtime data (do NOT commit DB data or logs)
+volumes/db/data/
+volumes/logs/
+
+# Local secrets
+.env
+
+.DS_Store
