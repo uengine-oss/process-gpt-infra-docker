@@ -55,6 +55,18 @@ load_selection() {
     grep -E -v '^\s*(#|$)' "$path" || true
 }
 
+# Portable replacement for `mapfile -t arr < <(cmd)` — macOS ships bash 3.2,
+# which has no mapfile/readarray builtin (both are bash 4+).
+read_lines_into() {
+    local __var="$1"
+    local __line
+    eval "$__var=()"
+    while IFS= read -r __line; do
+        eval "$__var+=(\"\$__line\")"
+    done
+    eval "unset __line"
+}
+
 list_presets() {
     ensure_state_dir
     [[ -d "$PRESETS_DIR" ]] || return 0
@@ -297,7 +309,7 @@ ensure_env_file
 # ---- Non-interactive shortcuts --------------------------------------
 # --last
 if [ "$USE_LAST" -eq 1 ]; then
-    mapfile -t names < <(load_selection "$LAST_SELECTION_FILE")
+    read_lines_into names < <(load_selection "$LAST_SELECTION_FILE")
     if [ "${#names[@]}" -eq 0 ]; then
         echo "No previous selection found. Run interactively first." >&2
         exit 1
@@ -309,7 +321,7 @@ fi
 
 # --preset NAME
 if [ -n "$PRESET" ]; then
-    mapfile -t names < <(load_selection "${PRESETS_DIR}/${PRESET}.txt")
+    read_lines_into names < <(load_selection "${PRESETS_DIR}/${PRESET}.txt")
     if [ "${#names[@]}" -eq 0 ]; then
         echo "Preset '$PRESET' not found or empty (${PRESETS_DIR}/${PRESET}.txt)." >&2
         exit 1
@@ -340,8 +352,8 @@ if [ "${#ARGS[@]}" -gt 0 ]; then
 fi
 
 # ---- Interactive mode -----------------------------------------------
-mapfile -t LAST_NAMES < <(load_selection "$LAST_SELECTION_FILE")
-mapfile -t PRESET_NAMES < <(list_presets)
+read_lines_into LAST_NAMES < <(load_selection "$LAST_SELECTION_FILE")
+read_lines_into PRESET_NAMES < <(list_presets)
 
 cat <<'MENU'
 
@@ -428,7 +440,7 @@ case "${MODE}" in
         idx=$((pick - 1))
         if (( idx < 0 || idx >= ${#PRESET_NAMES[@]} )); then echo "Out of range." >&2; exit 1; fi
         chosen_preset="${PRESET_NAMES[$idx]}"
-        mapfile -t names < <(load_selection "${PRESETS_DIR}/${chosen_preset}.txt")
+        read_lines_into names < <(load_selection "${PRESETS_DIR}/${chosen_preset}.txt")
         if [ "${#names[@]}" -eq 0 ]; then echo "Preset empty." >&2; exit 1; fi
         echo "Loaded preset '${chosen_preset}': ${names[*]}"
         start_services "${names[@]}"

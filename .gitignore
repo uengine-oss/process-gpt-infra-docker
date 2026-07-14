@@ -6,3 +6,6 @@ volumes/logs/
 .env
 
 .DS_Store
+
+# Local run-state (last selection / saved presets)
+.process-gpt-state/

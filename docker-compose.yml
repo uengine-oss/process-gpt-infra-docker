@@ -41,10 +41,10 @@ services:
       start_period: 20s
 
   frontend:
+    image: ghcr.io/uengine-oss/process-gpt:1acd8a3
     build:
       context: ./services/frontend
       dockerfile: Dockerfile
-    image: process-gpt-frontend:local
     environment:
       VITE_SUPABASE_URL: ${API_EXTERNAL_URL}
       VITE_SUPABASE_KEY: ${ANON_KEY}
@@ -53,10 +53,10 @@ services:
       VITE_GS_MODE: "false"
 
   completion:
+    image: ghcr.io/uengine-oss/process-gpt-completion:a100ab6
     build:
       context: ./services/completion
       dockerfile: Dockerfile
-    image: process-gpt-completion:local
     ports:
       - "8000:8000"
     healthcheck:
@@ -122,10 +122,10 @@ services:
       - db
 
   memento:
+    image: ghcr.io/uengine-oss/process-gpt-memento:a640bb4
     build:
       context: ./services/memento
       dockerfile: Dockerfile
-    image: process-gpt-memento:local
     ports:
       - "8005:8005"
     environment:
@@ -171,10 +171,10 @@ services:
         condition: service_started
 
   openai-deep-research:
+    image: ghcr.io/uengine-oss/openai-deep-research:49ddcd9
     build:
       context: ./services/openai-deep-research
       dockerfile: Dockerfile
-    image: process-gpt-openai-deep-research:local
     ports:
       - "8003:8000"
     environment:
@@ -193,10 +193,10 @@ services:
       - rest
 
   a2a-orch:
+    image: ghcr.io/uengine-oss/process-gpt-a2a-orch:241433c
     build:
       context: ./services/a2a-orch
       dockerfile: Dockerfile
-    image: process-gpt-a2a-orch:local
     ports:
       - "8006:8000"
     environment:
@@ -243,10 +243,10 @@ services:
         condition: service_started
 
   react-voice-agent:
+    image: ghcr.io/uengine-oss/react-voice-agent:b79f700
     build:
       context: ./services/react-voice-agent
       dockerfile: Dockerfile
-    image: process-gpt-react-voice-agent:local
     ports:
       - "3000:3000"
     environment:
@@ -258,10 +258,10 @@ services:
       - rest
 
   base-agent-langchain-react:
+    image: ghcr.io/uengine-oss/process-gpt-base-agent-langchain-react:v0.0.14
     build:
       context: ./services/base-agent-langchain-react
       dockerfile: Dockerfile
-    image: process-gpt-base-agent-langchain-react:local
     ports:
       - "8008:8000"
     environment:
@@ -297,10 +297,10 @@ services:
       - memento
 
   computer-use:
+    image: ghcr.io/uengine-oss/computer-use:latest
     build:
       context: ./services/computer-use
       dockerfile: Dockerfile
-    image: process-gpt-computer-use:local
     environment:
       IN_CLUSTER: "false"
       SUPABASE_URL: ${SUPABASE_INTERNAL_URL}
@@ -309,10 +309,10 @@ services:
       - "8007:8000"
 
   agent-feedback:
+    image: ghcr.io/uengine-oss/agent-feedback:85b7b5a
     build:
       context: ./services/agent-feedback
       dockerfile: Dockerfile
-    image: process-gpt-agent-feedback:local
     ports:
       - "6789:6789"
     environment:
@@ -334,10 +334,10 @@ services:
       - rest
 
   process-gpt-analytic:
+    image: ghcr.io/uengine-oss/process-gpt-analytic:f35f74e
     build:
       context: ./services/analytic
       dockerfile: Dockerfile
-    image: process-gpt-analytic:local
     ports:
       - "8009:8000"
     environment:
@@ -401,10 +401,10 @@ services:
       - neo4j
 
   process-gpt-office-mcp:
+    image: ghcr.io/uengine-oss/process-gpt-office-mcp:f14cbce
     build:
       context: ./services/office-mcp
       dockerfile: Dockerfile
-    image: process-gpt-office-mcp:local
     ports:
       - "1192:1192"
     environment:
@@ -423,10 +423,10 @@ services:
       - rest
 
   process-gpt-deep-research:
+    image: ghcr.io/uengine-oss/process-gpt-deep-research:8a343e2
     build:
       context: ./services/deep-research
       dockerfile: Dockerfile
-    image: process-gpt-deep-research:local
     ports:
       - "8020:3000"
     environment:
@@ -446,10 +446,10 @@ services:
       - rest
 
   deepagents:
+    image: ghcr.io/uengine-oss/process-gpt-deepagents:24fbdd4
     build:
       context: ./services/deepagents
       dockerfile: Dockerfile
-    image: process-gpt-deepagents:local
     container_name: deepagents
     ports:
       - "8021:8888"

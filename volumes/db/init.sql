@@ -81,12 +81,6 @@ DO $$ BEGIN
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
--- 오케스트레이션 방식 enum
-DO $$ BEGIN
-  CREATE TYPE agent_orch AS ENUM ('crewai-action', 'openai-deep-research', 'crewai-deep-research', 'langchain-react', 'browser-automation-agent', 'a2a', 'visionparse', 'pdf2bpmn');
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
-END $$;
 -- 드래프트 상태 enum
 DO $$ BEGIN
   CREATE TYPE draft_status AS ENUM ('STARTED', 'CANCELLED', 'COMPLETED', 'FB_REQUESTED', 'HUMAN_ASKED', 'FAILED');
@@ -448,7 +442,7 @@ create table if not exists public.todolist (
     project_id uuid null,
     draft jsonb null,
     agent_mode agent_mode null,
-    agent_orch agent_orch null,
+    agent_orch text null,
     feedback jsonb null,
     draft_status draft_status null,
     updated_at timestamp with time zone default now(),
@@ -569,7 +563,7 @@ create table if not exists public.form_def_marketplace (
     constraint form_def_marketplace_pkey primary key (uuid)
 ) tablespace pg_default;
 
-create table public.tenant_oauth (
+create table if not exists public.tenant_oauth (
     tenant_id text not null,
     client_id text not null,
     client_secret text not null,
@@ -720,7 +714,7 @@ $$;
 
 ------------------ 결제시스템 ---------------------------
 -- payment(결제 이력)
-CREATE TABLE public.payment (
+CREATE TABLE IF NOT EXISTS public.payment (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(), -- 고유ID
     payment_key TEXT,                              -- 결제 KEY(PG 관리)
     order_id TEXT UNIQUE,                          -- 주문 ID(난수)
@@ -751,7 +745,7 @@ CREATE TABLE public.payment (
 
 
 -- service(개별 서비스 식별)
-CREATE TABLE public.service (
+CREATE TABLE IF NOT EXISTS public.service (
     id          TEXT NOT NULL, 								 -- 서비스 ID
     name        TEXT,                                        -- 서비스 이름
     created_at  TIMESTAMPTZ DEFAULT NOW(),      			 -- 생성일
@@ -787,7 +781,7 @@ CREATE INDEX IF NOT EXISTS idx_service_rate_service_tenant ON public.service_rat
 
 
 -- usage(사용량)
-CREATE TABLE public.usage (
+CREATE TABLE IF NOT EXISTS public.usage (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,        	 -- 사용량 ID
     tenant_id TEXT NOT NULL REFERENCES public.tenants(id),   -- 테넌트
 
@@ -813,14 +807,14 @@ CREATE TABLE public.usage (
 	    ON UPDATE CASCADE
 	    ON DELETE RESTRICT
 );
-CREATE INDEX idx_usage_service_id      ON public.usage(service_id);
-CREATE INDEX idx_usage_process_def_id  ON public.usage(process_def_id);
-CREATE INDEX idx_usage_process_inst_id ON public.usage(process_inst_id);
-CREATE INDEX idx_usage_tenant_master_date ON public.usage (tenant_id, service_id, usage_start_at);
+CREATE INDEX IF NOT EXISTS idx_usage_service_id      ON public.usage(service_id);
+CREATE INDEX IF NOT EXISTS idx_usage_process_def_id  ON public.usage(process_def_id);
+CREATE INDEX IF NOT EXISTS idx_usage_process_inst_id ON public.usage(process_inst_id);
+CREATE INDEX IF NOT EXISTS idx_usage_tenant_master_date ON public.usage (tenant_id, service_id, usage_start_at);
 
 
 -- credit(크레딧 정의)
-CREATE TABLE public.credit (
+CREATE TABLE IF NOT EXISTS public.credit (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),      -- 크레딧 ID
     name TEXT NOT NULL,                                 -- 크레딧 명
     description TEXT,                                   -- 크레딧 설명
@@ -836,7 +830,7 @@ CREATE TABLE public.credit (
 );
 
 -- credit_purchase(테넌트의 '충전 크래딧' 구매이력)
-CREATE TABLE public.credit_purchase (
+CREATE TABLE IF NOT EXISTS public.credit_purchase (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,    		-- 크레딧 구매ID
     tenant_id TEXT NOT NULL REFERENCES public.tenants(id),  -- 테넌트
     added_credit DECIMAL(12,7) NOT NULL,              	   	-- 추가된 크레딧 
@@ -853,7 +847,7 @@ CREATE TABLE public.credit_purchase (
  
 
 -- credit_usage(크레딧 차감 이력 테이블)
-CREATE TABLE public.credit_usage (
+CREATE TABLE IF NOT EXISTS public.credit_usage (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,                    -- 크레딧 이력 ID
     tenant_id TEXT NOT NULL REFERENCES public.tenants(id),            -- 테넌트ID
     usage_id UUID NOT NULL REFERENCES public.usage(id),               -- 사용량 ID
@@ -1372,52 +1366,66 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Create triggers
+-- (DROP TRIGGER IF EXISTS 선행: init.sql은 CREATE OR REPLACE FUNCTION/
+--  IF NOT EXISTS 위주로 이미 재실행 안전하게 작성되어 있으나 트리거만
+--  예외였음 — 이미 초기화된 DB에 스키마 변경분을 재적용할 때
+--  "trigger already exists"로 실패하지 않도록 통일)
+DROP TRIGGER IF EXISTS trigger_update_project_updated_at ON public.bpm_proc_inst;
 CREATE TRIGGER trigger_update_project_updated_at
     AFTER UPDATE OF updated_at ON public.bpm_proc_inst
     FOR EACH ROW
     EXECUTE FUNCTION update_project_updated_at();
 
+DROP TRIGGER IF EXISTS trigger_update_bpm_proc_inst_updated_at ON public.todolist;
 CREATE TRIGGER trigger_update_bpm_proc_inst_updated_at
     AFTER UPDATE ON public.todolist
     FOR EACH ROW
     EXECUTE FUNCTION update_bpm_proc_inst_updated_at();
 
+DROP TRIGGER IF EXISTS set_updated_at ON public.todolist;
 CREATE TRIGGER set_updated_at
     BEFORE UPDATE ON public.todolist
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS set_updated_at ON public.knowledge_files;
 CREATE TRIGGER set_updated_at
     BEFORE UPDATE ON public.knowledge_files
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS before_insert_user_permissions ON public.user_permissions;
 CREATE TRIGGER before_insert_user_permissions
     BEFORE INSERT ON public.user_permissions
     FOR EACH ROW
     EXECUTE FUNCTION set_user_permissions_id();
 
+DROP TRIGGER IF EXISTS on_first_tenant_inserted ON public.tenants;
 CREATE TRIGGER on_first_tenant_inserted
     AFTER INSERT ON public.tenants
     FOR EACH ROW
     EXECUTE PROCEDURE public.update_tenant_id_for_first_tenant();
 
+DROP TRIGGER IF EXISTS todolist_change_trigger ON todolist;
 CREATE TRIGGER todolist_change_trigger
     AFTER INSERT OR UPDATE ON todolist
     FOR EACH ROW
     EXECUTE FUNCTION handle_todolist_change();
 
+DROP TRIGGER IF EXISTS update_user_id_trigger ON todolist;
 CREATE TRIGGER update_user_id_trigger
     AFTER UPDATE ON todolist
     FOR EACH ROW
     WHEN (OLD.user_id IS DISTINCT FROM NEW.user_id)
     EXECUTE FUNCTION update_notification_user_id();
 
+DROP TRIGGER IF EXISTS delete_notification_trigger ON todolist;
 CREATE TRIGGER delete_notification_trigger
     AFTER DELETE ON todolist
     FOR EACH ROW
     EXECUTE FUNCTION delete_notification_on_todolist_delete();
 
+DROP TRIGGER IF EXISTS chat_insert_trigger ON public.chats;
 CREATE TRIGGER chat_insert_trigger
     AFTER INSERT ON public.chats
     FOR EACH ROW
@@ -1449,153 +1457,267 @@ ALTER TABLE knowledge_folders ENABLE ROW LEVEL SECURITY;
 
 -- Create RLS policies
 -- Tenants policies
+DROP POLICY IF EXISTS tenants_insert_policy ON tenants;
 CREATE POLICY tenants_insert_policy ON tenants FOR INSERT TO authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS tenants_select_policy ON tenants;
 CREATE POLICY tenants_select_policy ON tenants FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS tenants_update_policy ON tenants;
 CREATE POLICY tenants_update_policy ON tenants FOR UPDATE TO authenticated USING (auth.uid() = owner);
+DROP POLICY IF EXISTS tenants_delete_policy ON tenants;
 CREATE POLICY tenants_delete_policy ON tenants FOR DELETE TO authenticated USING (auth.uid() = owner);
 
 -- Users policies
+DROP POLICY IF EXISTS users_insert_policy ON users;
 CREATE POLICY users_insert_policy ON users FOR INSERT TO authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS users_select_policy ON users;
 CREATE POLICY users_select_policy ON users FOR SELECT TO public USING (true);
+DROP POLICY IF EXISTS users_update_policy ON users;
 CREATE POLICY users_update_policy ON users FOR UPDATE TO public USING (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true) OR auth.uid() = id) WITH CHECK (true);
+DROP POLICY IF EXISTS users_delete_policy ON users;
 CREATE POLICY users_delete_policy ON users FOR DELETE TO authenticated USING (public.tenant_id() = tenant_id);
 
 -- Configuration policies
+DROP POLICY IF EXISTS configuration_insert_policy ON configuration;
 CREATE POLICY configuration_insert_policy ON configuration FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS configuration_select_policy ON configuration;
 CREATE POLICY configuration_select_policy ON configuration FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS configuration_update_policy ON configuration;
 CREATE POLICY configuration_update_policy ON configuration FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS configuration_delete_policy ON configuration;
 CREATE POLICY configuration_delete_policy ON configuration FOR DELETE TO authenticated USING ((tenant_id = public.tenant_id()) AND (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true)));
 
 -- Proc map history policies
+DROP POLICY IF EXISTS proc_map_history_insert_policy ON proc_map_history;
 CREATE POLICY proc_map_history_insert_policy ON proc_map_history FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS proc_map_history_select_policy ON proc_map_history;
 CREATE POLICY proc_map_history_select_policy ON proc_map_history FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS proc_map_history_update_policy ON proc_map_history;
 CREATE POLICY proc_map_history_update_policy ON proc_map_history FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS proc_map_history_delete_policy ON proc_map_history;
 CREATE POLICY proc_map_history_delete_policy ON proc_map_history FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
 
 -- Proc def policies
+DROP POLICY IF EXISTS proc_def_insert_policy ON proc_def;
 CREATE POLICY proc_def_insert_policy ON proc_def FOR INSERT TO authenticated WITH CHECK ((tenant_id = public.tenant_id()) AND (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true)));
+DROP POLICY IF EXISTS proc_def_select_policy ON proc_def;
 CREATE POLICY proc_def_select_policy ON proc_def FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS proc_def_update_policy ON proc_def;
 CREATE POLICY proc_def_update_policy ON proc_def FOR UPDATE TO authenticated USING ((tenant_id = public.tenant_id()) AND (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true)));
+DROP POLICY IF EXISTS proc_def_delete_policy ON proc_def;
 CREATE POLICY proc_def_delete_policy ON proc_def FOR DELETE TO authenticated USING ((tenant_id = public.tenant_id()) AND (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true)));
 
+DROP POLICY IF EXISTS proc_def_arcv_insert_policy ON proc_def_arcv;
 CREATE POLICY proc_def_arcv_insert_policy ON proc_def_arcv FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS proc_def_arcv_select_policy ON proc_def_arcv;
 CREATE POLICY proc_def_arcv_select_policy ON proc_def_arcv FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS proc_def_arcv_update_policy ON proc_def_arcv;
 CREATE POLICY proc_def_arcv_update_policy ON proc_def_arcv FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS proc_def_arcv_delete_policy ON proc_def_arcv;
 CREATE POLICY proc_def_arcv_delete_policy ON proc_def_arcv FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
 
 -- Proc def version policies
+DROP POLICY IF EXISTS proc_def_version_insert_policy ON proc_def_version;
 CREATE POLICY proc_def_version_insert_policy ON proc_def_version FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS proc_def_version_select_policy ON proc_def_version;
 CREATE POLICY proc_def_version_select_policy ON proc_def_version FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS proc_def_version_update_policy ON proc_def_version;
 CREATE POLICY proc_def_version_update_policy ON proc_def_version FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS proc_def_version_delete_policy ON proc_def_version;
 CREATE POLICY proc_def_version_delete_policy ON proc_def_version FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
 
 -- Form def policies
+DROP POLICY IF EXISTS form_def_insert_policy ON form_def;
 CREATE POLICY form_def_insert_policy ON form_def FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true));
+DROP POLICY IF EXISTS form_def_select_policy ON form_def;
 CREATE POLICY form_def_select_policy ON form_def FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS form_def_update_policy ON form_def;
 CREATE POLICY form_def_update_policy ON form_def FOR UPDATE TO authenticated USING (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true));
+DROP POLICY IF EXISTS form_def_delete_policy ON form_def;
 CREATE POLICY form_def_delete_policy ON form_def FOR DELETE TO authenticated USING (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true));
 
 -- Notifications policies
+DROP POLICY IF EXISTS notifications_insert_policy ON notifications;
 CREATE POLICY notifications_insert_policy ON notifications FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS notifications_select_policy ON notifications;
 CREATE POLICY notifications_select_policy ON notifications FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS notifications_update_policy ON notifications;
 CREATE POLICY notifications_update_policy ON notifications FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS notifications_delete_policy ON notifications;
 CREATE POLICY notifications_delete_policy ON notifications FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
 
 -- Lock policies
+DROP POLICY IF EXISTS lock_insert_policy ON lock;
 CREATE POLICY lock_insert_policy ON lock FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true));
+DROP POLICY IF EXISTS lock_select_policy ON lock;
 CREATE POLICY lock_select_policy ON lock FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS lock_update_policy ON lock;
 CREATE POLICY lock_update_policy ON lock FOR UPDATE TO authenticated USING (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true));
+DROP POLICY IF EXISTS lock_delete_policy ON lock;
 CREATE POLICY lock_delete_policy ON lock FOR DELETE TO authenticated USING (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true));
 
 -- BPM proc inst policies
+DROP POLICY IF EXISTS bpm_proc_inst_insert_policy ON bpm_proc_inst;
 CREATE POLICY bpm_proc_inst_insert_policy ON bpm_proc_inst FOR INSERT TO authenticated WITH CHECK ((tenant_id = public.tenant_id()) AND (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true)));
+DROP POLICY IF EXISTS bpm_proc_inst_select_policy ON bpm_proc_inst;
 CREATE POLICY bpm_proc_inst_select_policy ON bpm_proc_inst FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS bpm_proc_inst_update_policy ON bpm_proc_inst;
 CREATE POLICY bpm_proc_inst_update_policy ON bpm_proc_inst FOR UPDATE TO authenticated USING ((tenant_id = public.tenant_id()) AND (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true)));
+DROP POLICY IF EXISTS bpm_proc_inst_delete_policy ON bpm_proc_inst;
 CREATE POLICY bpm_proc_inst_delete_policy ON bpm_proc_inst FOR DELETE TO authenticated USING ((tenant_id = public.tenant_id()) AND (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true)));
 
 -- Todolist policies
+DROP POLICY IF EXISTS todolist_insert_policy ON todolist;
 CREATE POLICY todolist_insert_policy ON todolist FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS todolist_select_policy ON todolist;
 CREATE POLICY todolist_select_policy ON todolist FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS todolist_update_policy ON todolist;
 CREATE POLICY todolist_update_policy ON todolist FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS todolist_delete_policy ON todolist;
 CREATE POLICY todolist_delete_policy ON todolist FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
 
 -- Delegation history policies
+DROP POLICY IF EXISTS delegation_history_insert_policy ON delegation_history;
 CREATE POLICY delegation_history_insert_policy ON delegation_history FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS delegation_history_select_policy ON delegation_history;
 CREATE POLICY delegation_history_select_policy ON delegation_history FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS delegation_history_update_policy ON delegation_history;
 CREATE POLICY delegation_history_update_policy ON delegation_history FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS delegation_history_delete_policy ON delegation_history;
 CREATE POLICY delegation_history_delete_policy ON delegation_history FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
 
 -- Chat rooms policies
+DROP POLICY IF EXISTS chat_rooms_insert_policy ON chat_rooms;
 CREATE POLICY chat_rooms_insert_policy ON chat_rooms FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS chat_rooms_select_policy ON chat_rooms;
 CREATE POLICY chat_rooms_select_policy ON chat_rooms FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS chat_rooms_update_policy ON chat_rooms;
 CREATE POLICY chat_rooms_update_policy ON chat_rooms FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS chat_rooms_delete_policy ON chat_rooms;
 CREATE POLICY chat_rooms_delete_policy ON chat_rooms FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
 
 -- Chats policies
+DROP POLICY IF EXISTS chats_insert_policy ON chats;
 CREATE POLICY chats_insert_policy ON chats FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS chats_select_policy ON chats;
 CREATE POLICY chats_select_policy ON chats FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS chats_update_policy ON chats;
 CREATE POLICY chats_update_policy ON chats FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS chats_delete_policy ON chats;
 CREATE POLICY chats_delete_policy ON chats FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
 
 -- Calendar policies
+DROP POLICY IF EXISTS calendar_insert_policy ON calendar;
 CREATE POLICY calendar_insert_policy ON calendar FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS calendar_select_policy ON calendar;
 CREATE POLICY calendar_select_policy ON calendar FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS calendar_update_policy ON calendar;
 CREATE POLICY calendar_update_policy ON calendar FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS calendar_delete_policy ON calendar;
 CREATE POLICY calendar_delete_policy ON calendar FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
 
 -- User permissions policies
+DROP POLICY IF EXISTS user_permissions_insert_policy ON user_permissions;
 CREATE POLICY user_permissions_insert_policy ON user_permissions FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS user_permissions_select_policy ON user_permissions;
 CREATE POLICY user_permissions_select_policy ON user_permissions FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS user_permissions_update_policy ON user_permissions;
 CREATE POLICY user_permissions_update_policy ON user_permissions FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS user_permissions_delete_policy ON user_permissions;
 CREATE POLICY user_permissions_delete_policy ON user_permissions FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
 
 -- Proc def marketplace policies
+DROP POLICY IF EXISTS proc_def_marketplace_insert_policy ON proc_def_marketplace;
 CREATE POLICY proc_def_marketplace_insert_policy ON proc_def_marketplace FOR INSERT TO authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS proc_def_marketplace_select_policy ON proc_def_marketplace;
 CREATE POLICY proc_def_marketplace_select_policy ON proc_def_marketplace FOR SELECT TO public USING (true);
+DROP POLICY IF EXISTS proc_def_marketplace_update_policy ON proc_def_marketplace;
 CREATE POLICY proc_def_marketplace_update_policy ON proc_def_marketplace FOR UPDATE TO authenticated USING (true);
+DROP POLICY IF EXISTS proc_def_marketplace_delete_policy ON proc_def_marketplace;
 CREATE POLICY proc_def_marketplace_delete_policy ON proc_def_marketplace FOR DELETE TO authenticated USING (true);
 
 -- Form def marketplace policies
+DROP POLICY IF EXISTS form_def_marketplace_insert_policy ON form_def_marketplace;
 CREATE POLICY form_def_marketplace_insert_policy ON form_def_marketplace FOR INSERT TO authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS form_def_marketplace_select_policy ON form_def_marketplace;
 CREATE POLICY form_def_marketplace_select_policy ON form_def_marketplace FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS form_def_marketplace_update_policy ON form_def_marketplace;
 CREATE POLICY form_def_marketplace_update_policy ON form_def_marketplace FOR UPDATE TO authenticated USING (true);
+DROP POLICY IF EXISTS form_def_marketplace_delete_policy ON form_def_marketplace;
 CREATE POLICY form_def_marketplace_delete_policy ON form_def_marketplace FOR DELETE TO authenticated USING (true);
 
 -- Tenant oauth policies
+DROP POLICY IF EXISTS tenant_oauth_insert_policy ON tenant_oauth;
 CREATE POLICY tenant_oauth_insert_policy ON tenant_oauth FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true));
+DROP POLICY IF EXISTS tenant_oauth_select_policy ON tenant_oauth;
 CREATE POLICY tenant_oauth_select_policy ON tenant_oauth FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true));
+DROP POLICY IF EXISTS tenant_oauth_update_policy ON tenant_oauth;
 CREATE POLICY tenant_oauth_update_policy ON tenant_oauth FOR UPDATE TO authenticated USING (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true));
+DROP POLICY IF EXISTS tenant_oauth_delete_policy ON tenant_oauth;
 CREATE POLICY tenant_oauth_delete_policy ON tenant_oauth FOR DELETE TO authenticated USING (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true));
 
 -- Knowledge files policies (테넌트 단위 격리)
+DROP POLICY IF EXISTS knowledge_files_select_policy ON knowledge_files;
 CREATE POLICY knowledge_files_select_policy ON knowledge_files FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS knowledge_files_insert_policy ON knowledge_files;
 CREATE POLICY knowledge_files_insert_policy ON knowledge_files FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS knowledge_files_update_policy ON knowledge_files;
 CREATE POLICY knowledge_files_update_policy ON knowledge_files FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS knowledge_files_delete_policy ON knowledge_files;
 CREATE POLICY knowledge_files_delete_policy ON knowledge_files FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
 
 -- Knowledge folders policies
+DROP POLICY IF EXISTS knowledge_folders_select_policy ON knowledge_folders;
 CREATE POLICY knowledge_folders_select_policy ON knowledge_folders FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS knowledge_folders_insert_policy ON knowledge_folders;
 CREATE POLICY knowledge_folders_insert_policy ON knowledge_folders FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS knowledge_folders_update_policy ON knowledge_folders;
 CREATE POLICY knowledge_folders_update_policy ON knowledge_folders FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS knowledge_folders_delete_policy ON knowledge_folders;
 CREATE POLICY knowledge_folders_delete_policy ON knowledge_folders FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
 
 -- Storage policies
+DROP POLICY IF EXISTS "Allow authenticated users to upload" ON storage.objects;
 CREATE POLICY "Allow authenticated users to upload" ON storage.objects FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 -- Project policies
+DROP POLICY IF EXISTS project_insert_policy ON project;
 CREATE POLICY project_insert_policy ON project FOR INSERT TO authenticated WITH CHECK ((tenant_id = public.tenant_id()) AND (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true)));
+DROP POLICY IF EXISTS project_select_policy ON project;
 CREATE POLICY project_select_policy ON project FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS project_update_policy ON project;
 CREATE POLICY project_update_policy ON project FOR UPDATE TO authenticated USING ((tenant_id = public.tenant_id()) AND (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true)));
+DROP POLICY IF EXISTS project_delete_policy ON project;
 CREATE POLICY project_delete_policy ON project FOR DELETE TO authenticated USING ((tenant_id = public.tenant_id()) AND (EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.is_admin = true)));
 
 -- Enable Realtime for specific tables
-alter publication supabase_realtime add table chats;
-alter publication supabase_realtime add table notifications;
-alter publication supabase_realtime add table todolist;
-alter publication supabase_realtime add table bpm_proc_inst;
-alter publication supabase_realtime add table proc_def; 
-alter publication supabase_realtime add table project;
-alter publication supabase_realtime add table events;
+DO $$ BEGIN
+  alter publication supabase_realtime add table chats;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+DO $$ BEGIN
+  alter publication supabase_realtime add table notifications;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+DO $$ BEGIN
+  alter publication supabase_realtime add table todolist;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+DO $$ BEGIN
+  alter publication supabase_realtime add table bpm_proc_inst;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+DO $$ BEGIN
+  alter publication supabase_realtime add table proc_def;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+DO $$ BEGIN
+  alter publication supabase_realtime add table project;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+DO $$ BEGIN
+  alter publication supabase_realtime add table events;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
 
 
 -- schedule 관련
@@ -1835,6 +1957,7 @@ end;
 $$ language plpgsql;
 
 -- bpm_proc_inst 삭제 시 관련 데이터를 삭제하는 트리거 생성
+drop trigger if exists cleanup_bpm_proc_inst_related_data_trigger on public.bpm_proc_inst;
 create trigger cleanup_bpm_proc_inst_related_data_trigger
     before delete on public.bpm_proc_inst
     for each row
@@ -2245,31 +2368,6 @@ BEGIN
     $sql$;
   END IF;
 
-  -- todolist.agent_orch -> agent_orch
-  SELECT udt_name INTO v_udt
-  FROM information_schema.columns
-  WHERE table_schema = 'public' AND table_name = 'todolist' AND column_name = 'agent_orch';
-
-  IF v_udt IS NOT NULL AND v_udt <> 'agent_orch' THEN
-    EXECUTE $sql$
-      ALTER TABLE public.todolist
-        ALTER COLUMN agent_orch TYPE agent_orch
-        USING (
-          CASE (agent_orch::text)
-            WHEN 'crewai-deep-research' THEN 'crewai-deep-research'::agent_orch
-            WHEN 'openai-deep-research' THEN 'openai-deep-research'::agent_orch
-            WHEN 'crewai-action' THEN 'crewai-action'::agent_orch
-            WHEN 'langchain-react' THEN 'langchain-react'::agent_orch
-            WHEN 'browser-automation-agent' THEN 'browser-automation-agent'::agent_orch
-            WHEN 'a2a' THEN 'a2a'::agent_orch
-            WHEN 'visionparse' THEN 'visionparse'::agent_orch
-            WHEN 'pdf2bpmn' THEN 'pdf2bpmn'::agent_orch
-            ELSE NULL
-          END
-        )
-    $sql$;
-  END IF;
-
   -- todolist.draft_status -> draft_status
   SELECT udt_name INTO v_udt
   FROM information_schema.columns
@@ -2327,217 +2425,6 @@ CREATE INDEX IF NOT EXISTS idx_document_images_tenant_id ON document_images(tena
 
 
 
--- 1) 대기중인 작업 조회 및 상태 변경
-DROP FUNCTION IF EXISTS public.crewai_deep_fetch_pending_task(integer, text);
-
-CREATE OR REPLACE FUNCTION public.crewai_deep_fetch_pending_task(
-  p_limit    integer,
-  p_consumer text
-)
-RETURNS TABLE (
-  id uuid,
-  user_id text,
-  proc_inst_id text,
-  proc_def_id text,
-  activity_id text,
-  activity_name text,
-  start_date timestamp without time zone,
-  end_date timestamp without time zone,
-  description text,
-  tool text,
-  due_date timestamp without time zone,
-  tenant_id text,
-  reference_ids text[],
-  adhoc boolean,
-  assignees jsonb,
-  duration integer,
-  output jsonb,
-  retry integer,
-  consumer text,
-  log text,
-  draft jsonb,
-  project_id uuid,
-  feedback jsonb,
-  updated_at timestamp with time zone,
-  username text,
-  status public.todo_status,
-  agent_mode public.agent_mode,
-  agent_orch public.agent_orch,
-  temp_feedback text,
-  draft_status public.draft_status,
-  -- 가상 컬럼(업데이트 전 값)
-  task_type public.draft_status,
-  root_proc_inst_id text
-) AS $$
-BEGIN
-  RETURN QUERY
-    WITH cte AS (
-      SELECT
-        t.*,
-        t.draft_status AS task_type   -- 원본 보관
-      FROM todolist AS t
-      WHERE t.status = 'IN_PROGRESS'
-        AND t.agent_orch = 'crewai-deep-research'
-        AND (
-          (t.agent_mode IN ('DRAFT','COMPLETE') AND t.draft IS NULL AND t.draft_status IS NULL)
-          OR t.draft_status = 'FB_REQUESTED'
-        )
-      ORDER BY t.start_date
-      LIMIT p_limit
-      FOR UPDATE SKIP LOCKED
-    ),
-    upd AS (
-      UPDATE todolist AS t
-         SET draft_status = 'STARTED',
-             consumer     = p_consumer
-        FROM cte
-       WHERE t.id = cte.id
-       RETURNING
-         t.id,
-         t.user_id,
-         t.proc_inst_id,
-         t.proc_def_id,
-         t.activity_id,
-         t.activity_name,
-         t.start_date,
-         t.end_date,
-         t.description,
-         t.tool,
-         t.due_date,
-         t.tenant_id,
-         t.reference_ids,
-         t.adhoc,
-         t.assignees,
-         t.duration,
-         t.output,
-         t.retry,
-         t.consumer,
-         t.log,
-         t.draft,
-         t.project_id,
-         t.feedback,
-         t.updated_at,
-         t.username,
-         t.status,
-         t.agent_mode,
-         t.agent_orch,
-         t.temp_feedback,
-         t.draft_status,              -- 변경 후 값 (STARTED)
-         cte.task_type,
-         t.root_proc_inst_id
-    )
-    SELECT * FROM upd;
-END;
-$$ LANGUAGE plpgsql VOLATILE;
-
-
-DROP FUNCTION IF EXISTS public.crewai_deep_fetch_pending_task_dev(integer, text, text);
-
-CREATE OR REPLACE FUNCTION public.crewai_deep_fetch_pending_task_dev(
-  p_limit      integer,
-  p_consumer   text,
-  p_tenant_id  text
-)
-RETURNS TABLE (
-  id uuid,
-  user_id text,
-  proc_inst_id text,
-  proc_def_id text,
-  activity_id text,
-  activity_name text,
-  start_date timestamp without time zone,
-  end_date timestamp without time zone,
-  description text,
-  tool text,
-  due_date timestamp without time zone,
-  tenant_id text,
-  reference_ids text[],
-  adhoc boolean,
-  assignees jsonb,
-  duration integer,
-  output jsonb,
-  retry integer,
-  consumer text,
-  log text,
-  draft jsonb,
-  project_id uuid,
-  feedback jsonb,
-  updated_at timestamp with time zone,
-  username text,
-  status public.todo_status,
-  agent_mode public.agent_mode,
-  agent_orch public.agent_orch,
-  temp_feedback text,
-  draft_status public.draft_status,
-  -- 가상 컬럼(업데이트 전 값)
-  task_type public.draft_status,
-  root_proc_inst_id text
-) AS $$
-BEGIN
-  RETURN QUERY
-    WITH cte AS (
-      SELECT
-        t.*,
-        t.draft_status AS task_type   -- 원본 보관
-      FROM todolist AS t
-      WHERE t.status = 'IN_PROGRESS'
-        AND t.agent_orch = 'crewai-deep-research'
-        AND t.tenant_id = p_tenant_id
-        AND (
-          (t.agent_mode IN ('DRAFT','COMPLETE') AND t.draft IS NULL AND t.draft_status IS NULL)
-          OR t.draft_status = 'FB_REQUESTED'
-        )
-      ORDER BY t.start_date
-      LIMIT p_limit
-      FOR UPDATE SKIP LOCKED
-    ),
-    upd AS (
-      UPDATE todolist AS t
-         SET draft_status = 'STARTED',
-             consumer     = p_consumer
-        FROM cte
-       WHERE t.id = cte.id
-       RETURNING
-         t.id,
-         t.user_id,
-         t.proc_inst_id,
-         t.proc_def_id,
-         t.activity_id,
-         t.activity_name,
-         t.start_date,
-         t.end_date,
-         t.description,
-         t.tool,
-         t.due_date,
-         t.tenant_id,
-         t.reference_ids,
-         t.adhoc,
-         t.assignees,
-         t.duration,
-         t.output,
-         t.retry,
-         t.consumer,
-         t.log,
-         t.draft,
-         t.project_id,
-         t.feedback,
-         t.updated_at,
-         t.username,
-         t.status,
-         t.agent_mode,
-         t.agent_orch,
-         t.temp_feedback,
-         t.draft_status,              -- 변경 후 값 (STARTED)
-         cte.task_type,               -- 변경 전 값
-         t.root_proc_inst_id
-    )
-    SELECT * FROM upd;
-END;
-$$ LANGUAGE plpgsql VOLATILE;
-
-
-
--- 2) 완료된 데이터(output/feedback) 조회
 DROP FUNCTION IF EXISTS public.fetch_done_data(text);
 
 CREATE OR REPLACE FUNCTION public.fetch_done_data(
@@ -2595,224 +2482,10 @@ END;
 $$ LANGUAGE plpgsql VOLATILE;
 
 -- 익명(anon) 역할에 실행 권한 부여
-GRANT EXECUTE ON FUNCTION public.crewai_deep_fetch_pending_task(integer, text) TO anon;
-GRANT EXECUTE ON FUNCTION public.crewai_deep_fetch_pending_task_dev(integer, text, text) TO anon;
 GRANT EXECUTE ON FUNCTION public.fetch_done_data(text) TO anon;
 GRANT EXECUTE ON FUNCTION public.save_task_result(uuid, jsonb, boolean) TO anon;
 
 
--- 기존 함수가 있다면 먼저 삭제
-DROP FUNCTION IF EXISTS public.crewai_action_fetch_pending_task(integer, text);
-
-CREATE OR REPLACE FUNCTION public.crewai_action_fetch_pending_task(
-  p_limit    integer,
-  p_consumer text
-)
-RETURNS TABLE (
-  id uuid,
-  user_id text,
-  proc_inst_id text,
-  proc_def_id text,
-  activity_id text,
-  activity_name text,
-  start_date timestamp without time zone,
-  end_date timestamp without time zone,
-  description text,
-  tool text,
-  due_date timestamp without time zone,
-  tenant_id text,
-  reference_ids text[],
-  adhoc boolean,
-  assignees jsonb,
-  duration integer,
-  output jsonb,
-  retry integer,
-  consumer text,
-  log text,
-  draft jsonb,
-  project_id uuid,
-  feedback jsonb,
-  updated_at timestamp with time zone,
-  username text,
-  status public.todo_status,
-  agent_mode public.agent_mode,
-  agent_orch public.agent_orch,
-  temp_feedback text,
-  draft_status public.draft_status,
-  -- 가상 컬럼(업데이트 전 값)
-  task_type public.draft_status,
-  root_proc_inst_id text
-) AS $$
-BEGIN
-  RETURN QUERY
-    WITH cte AS (
-      SELECT
-        t.*,
-        t.draft_status AS task_type   -- 원본 보관
-      FROM todolist AS t
-      WHERE t.status = 'IN_PROGRESS'
-        AND t.agent_orch = 'crewai-action'
-        AND (
-          (t.agent_mode IN ('DRAFT','COMPLETE') AND t.draft IS NULL AND t.draft_status IS NULL)
-          OR t.draft_status = 'FB_REQUESTED'
-        )
-      ORDER BY t.start_date
-      LIMIT p_limit
-      FOR UPDATE SKIP LOCKED
-    ),
-    upd AS (
-      UPDATE todolist AS t
-         SET draft_status = 'STARTED',
-             consumer     = p_consumer
-        FROM cte
-       WHERE t.id = cte.id
-       RETURNING
-         t.id,
-         t.user_id,
-         t.proc_inst_id,
-         t.proc_def_id,
-         t.activity_id,
-         t.activity_name,
-         t.start_date,
-         t.end_date,
-         t.description,
-         t.tool,
-         t.due_date,
-         t.tenant_id,
-         t.reference_ids,
-         t.adhoc,
-         t.assignees,
-         t.duration,
-         t.output,
-         t.retry,
-         t.consumer,
-         t.log,
-         t.draft,
-         t.project_id,
-         t.feedback,
-         t.updated_at,
-         t.username,
-         t.status,
-         t.agent_mode,
-         t.agent_orch,
-         t.temp_feedback,
-         t.draft_status,              -- 변경 후 값 (STARTED)
-         cte.task_type,      -- 변경 전 값
-         t.root_proc_inst_id
-    )
-    SELECT * FROM upd;
-END;
-$$ LANGUAGE plpgsql VOLATILE;
-
-
-DROP FUNCTION IF EXISTS public.crewai_action_fetch_pending_task_dev(integer, text, text);
-
-CREATE OR REPLACE FUNCTION public.crewai_action_fetch_pending_task_dev(
-  p_limit      integer,
-  p_consumer   text,
-  p_tenant_id  text
-)
-RETURNS TABLE (
-  id uuid,
-  user_id text,
-  proc_inst_id text,
-  proc_def_id text,
-  activity_id text,
-  activity_name text,
-  start_date timestamp without time zone,
-  end_date timestamp without time zone,
-  description text,
-  tool text,
-  due_date timestamp without time zone,
-  tenant_id text,
-  reference_ids text[],
-  adhoc boolean,
-  assignees jsonb,
-  duration integer,
-  output jsonb,
-  retry integer,
-  consumer text,
-  log text,
-  draft jsonb,
-  project_id uuid,
-  feedback jsonb,
-  updated_at timestamp with time zone,
-  username text,
-  status public.todo_status,
-  agent_mode public.agent_mode,
-  agent_orch public.agent_orch,
-  temp_feedback text,
-  draft_status public.draft_status,
-  -- 가상 컬럼(업데이트 전 값)
-  task_type public.draft_status,
-  root_proc_inst_id text
-) AS $$
-BEGIN
-  RETURN QUERY
-    WITH cte AS (
-      SELECT
-        t.*,
-        t.draft_status AS task_type   -- 원본 보관
-      FROM todolist AS t
-      WHERE t.status = 'IN_PROGRESS'
-        AND t.agent_orch = 'crewai-action'
-        AND t.tenant_id = p_tenant_id
-        AND (
-          (t.agent_mode IN ('DRAFT','COMPLETE') AND t.draft IS NULL AND t.draft_status IS NULL)
-          OR t.draft_status = 'FB_REQUESTED'
-        )
-      ORDER BY t.start_date
-      LIMIT p_limit
-      FOR UPDATE SKIP LOCKED
-    ),
-    upd AS (
-      UPDATE todolist AS t
-         SET draft_status = 'STARTED',
-             consumer     = p_consumer
-        FROM cte
-       WHERE t.id = cte.id
-       RETURNING
-         t.id,
-         t.user_id,
-         t.proc_inst_id,
-         t.proc_def_id,
-         t.activity_id,
-         t.activity_name,
-         t.start_date,
-         t.end_date,
-         t.description,
-         t.tool,
-         t.due_date,
-         t.tenant_id,
-         t.reference_ids,
-         t.adhoc,
-         t.assignees,
-         t.duration,
-         t.output,
-         t.retry,
-         t.consumer,
-         t.log,
-         t.draft,
-         t.project_id,
-         t.feedback,
-         t.updated_at,
-         t.username,
-         t.status,
-         t.agent_mode,
-         t.agent_orch,
-         t.temp_feedback,
-         t.draft_status,              -- 변경 후 값 (STARTED)
-         cte.task_type,                -- 변경 전 값
-         t.root_proc_inst_id
-    )
-    SELECT * FROM upd;
-END;
-$$ LANGUAGE plpgsql VOLATILE;
-
-GRANT EXECUTE ON FUNCTION public.crewai_action_fetch_pending_task(integer, text) TO anon;
-GRANT EXECUTE ON FUNCTION public.crewai_action_fetch_pending_task_dev(integer, text, text) TO anon;
-
--- 1) 대기중인 작업 조회 및 상태 변경
 DROP FUNCTION IF EXISTS public.openai_deep_fetch_pending_task(integer, text);
 
 CREATE OR REPLACE FUNCTION public.openai_deep_fetch_pending_task(
@@ -2847,7 +2520,7 @@ RETURNS TABLE (
   username text,
   status public.todo_status,
   agent_mode public.agent_mode,
-  agent_orch public.agent_orch,
+  agent_orch text,
   temp_feedback text,
   draft_status public.draft_status,
   -- 가상 컬럼(업데이트 전 값)
@@ -2908,110 +2581,6 @@ BEGIN
          t.temp_feedback,
          t.draft_status,              -- 변경 후 값 (STARTED)
          cte.task_type      -- 변경 전 값
-    )
-    SELECT * FROM upd;
-END;
-$$ LANGUAGE plpgsql VOLATILE;
-
-
-
-DROP FUNCTION IF EXISTS public.openai_deep_fetch_pending_task_dev(integer, text, text);
-
-CREATE OR REPLACE FUNCTION public.openai_deep_fetch_pending_task_dev(
-  p_limit      integer,
-  p_consumer   text,
-  p_tenant_id  text
-)
-RETURNS TABLE (
-  id uuid,
-  user_id text,
-  proc_inst_id text,
-  proc_def_id text,
-  activity_id text,
-  activity_name text,
-  start_date timestamp without time zone,
-  end_date timestamp without time zone,
-  description text,
-  tool text,
-  due_date timestamp without time zone,
-  tenant_id text,
-  reference_ids text[],
-  adhoc boolean,
-  assignees jsonb,
-  duration integer,
-  output jsonb,
-  retry integer,
-  consumer text,
-  log text,
-  draft jsonb,
-  project_id uuid,
-  feedback jsonb,
-  updated_at timestamp with time zone,
-  username text,
-  status public.todo_status,
-  agent_mode public.agent_mode,
-  agent_orch public.agent_orch,
-  temp_feedback text,
-  draft_status public.draft_status,
-  -- 가상 컬럼(업데이트 전 값)
-  task_type public.draft_status
-) AS $$
-BEGIN
-  RETURN QUERY
-    WITH cte AS (
-      SELECT
-        t.*,
-        t.draft_status AS task_type   -- 원본 보관
-      FROM todolist AS t
-      WHERE t.status = 'IN_PROGRESS'
-        AND t.agent_orch = 'openai-deep-research'
-        AND t.tenant_id = p_tenant_id
-        AND (
-          (t.agent_mode IN ('DRAFT','COMPLETE') AND t.draft IS NULL AND t.draft_status IS NULL)
-          OR t.draft_status = 'FB_REQUESTED'
-        )
-      ORDER BY t.start_date
-      LIMIT p_limit
-      FOR UPDATE SKIP LOCKED
-    ),
-    upd AS (
-      UPDATE todolist AS t
-         SET draft_status = 'STARTED',
-             consumer     = p_consumer
-        FROM cte
-       WHERE t.id = cte.id
-       RETURNING
-         t.id,
-         t.user_id,
-         t.proc_inst_id,
-         t.proc_def_id,
-         t.activity_id,
-         t.activity_name,
-         t.start_date,
-         t.end_date,
-         t.description,
-         t.tool,
-         t.due_date,
-         t.tenant_id,
-         t.reference_ids,
-         t.adhoc,
-         t.assignees,
-         t.duration,
-         t.output,
-         t.retry,
-         t.consumer,
-         t.log,
-         t.draft,
-         t.project_id,
-         t.feedback,
-         t.updated_at,
-         t.username,
-         t.status,
-         t.agent_mode,
-         t.agent_orch,
-         t.temp_feedback,
-         t.draft_status,              -- 변경 후 값 (STARTED)
-         cte.task_type                -- 변경 전 값
     )
     SELECT * FROM upd;
 END;
@@ -3128,118 +2697,9 @@ BEGIN
 END;
 $function$;
 
-
-DROP FUNCTION IF EXISTS public.deep_research_fetch_pending_task_dev(text, text, integer, text);
-
-CREATE OR REPLACE FUNCTION public.deep_research_fetch_pending_task_dev(
-  p_agent_orch text,
-  p_consumer   text,
-  p_limit      integer,
-  p_tenant_id  text
-)
-RETURNS TABLE(
-  id uuid,
-  user_id text,
-  proc_inst_id text,
-  proc_def_id text,
-  activity_id text,
-  activity_name text,
-  start_date timestamp without time zone,
-  end_date timestamp without time zone,
-  description text,
-  tool text,
-  due_date timestamp without time zone,
-  tenant_id text,
-  reference_ids text[],
-  adhoc boolean,
-  assignees jsonb,
-  duration integer,
-  output jsonb,
-  retry integer,
-  consumer text,
-  log text,
-  draft jsonb,
-  project_id uuid,
-  feedback jsonb,
-  updated_at timestamp with time zone,
-  username text,
-  status public.todo_status,
-  agent_mode public.agent_mode,
-  agent_orch public.agent_orch,
-  temp_feedback text,
-  draft_status public.draft_status,
-  query text,
-  task_type public.draft_status
-)
-LANGUAGE plpgsql
-AS $function$
-BEGIN
-  RETURN QUERY
-    WITH cte AS (
-      SELECT
-        t.*,
-        t.draft_status AS task_type
-      FROM todolist AS t
-      WHERE t.status = 'IN_PROGRESS'
-        AND t.tenant_id = p_tenant_id
-        AND (p_agent_orch IS NULL OR p_agent_orch = '' OR t.agent_orch::text = p_agent_orch)
-        AND (
-          (t.agent_mode IN ('DRAFT','COMPLETE') AND t.draft IS NULL AND t.draft_status IS NULL)
-          OR t.draft_status = 'FB_REQUESTED'
-        )
-      ORDER BY t.start_date
-      LIMIT p_limit
-      FOR UPDATE SKIP LOCKED
-    ),
-    upd AS (
-      UPDATE todolist AS t
-         SET draft_status = 'STARTED',
-             consumer     = p_consumer
-        FROM cte
-       WHERE t.id = cte.id
-       RETURNING
-         t.id,
-         t.user_id,
-         t.proc_inst_id,
-         t.proc_def_id,
-         t.activity_id,
-         t.activity_name,
-         t.start_date,
-         t.end_date,
-         t.description,
-         t.tool,
-         t.due_date,
-         t.tenant_id,
-         t.reference_ids,
-         t.adhoc,
-         t.assignees,
-         t.duration,
-         t.output,
-         t.retry,
-         t.consumer,
-         t.log,
-         t.draft,
-         t.project_id,
-         t.feedback,
-         t.updated_at,
-         t.username,
-         t.status,
-         t.agent_mode::public.agent_mode,
-         t.agent_orch::public.agent_orch,
-         t.temp_feedback,
-         t.draft_status,
-         t.query,
-         cte.task_type
-    )
-    SELECT * FROM upd;
-END;
-$function$;
-
 GRANT EXECUTE ON FUNCTION public.deep_research_fetch_pending_task(text, text, integer) TO anon;
-GRANT EXECUTE ON FUNCTION public.deep_research_fetch_pending_task_dev(text, text, integer, text) TO anon;
 
 
--- 0) 공용 대기 작업 조회 및 상태 변경 (agent_orch 인자로 필터)
 DROP FUNCTION IF EXISTS public.fetch_pending_task(text, text, integer, text);
 
 CREATE OR REPLACE FUNCTION public.fetch_pending_task(
@@ -3282,116 +2742,12 @@ BEGIN
 END;
 $$;
 
--- 0-1) 공용 대기 작업 조회 및 상태 변경 (dev: tenant_id 인자로 필터)
-DROP FUNCTION IF EXISTS public.fetch_pending_task_dev(text, text, integer, text);
-
-CREATE OR REPLACE FUNCTION public.fetch_pending_task_dev(
-  p_agent_orch text,
-  p_consumer   text,
-  p_limit      integer,
-  p_tenant_id  text
-)
-RETURNS TABLE (
-  id uuid,
-  user_id text,
-  proc_inst_id text,
-  proc_def_id text,
-  activity_id text,
-  activity_name text,
-  start_date timestamp without time zone,
-  end_date timestamp without time zone,
-  description text,
-  tool text,
-  due_date timestamp without time zone,
-  tenant_id text,
-  reference_ids text[],
-  adhoc boolean,
-  assignees jsonb,
-  duration integer,
-  output jsonb,
-  retry integer,
-  consumer text,
-  log text,
-  draft jsonb,
-  project_id uuid,
-  feedback jsonb,
-  updated_at timestamp with time zone,
-  username text,
-  status public.todo_status,
-  agent_mode public.agent_mode,
-  agent_orch public.agent_orch,
-  temp_feedback text,
-  draft_status public.draft_status,
-  task_type public.draft_status
-)
-AS $$
-BEGIN
-  RETURN QUERY
-    WITH cte AS (
-      SELECT
-        t.*,
-        t.draft_status AS task_type
-      FROM todolist AS t
-      WHERE t.status = 'IN_PROGRESS'
-        AND (p_agent_orch IS NULL OR p_agent_orch = '' OR t.agent_orch::text = p_agent_orch)
-        AND t.tenant_id = p_tenant_id
-        AND (
-          (t.agent_mode IN ('DRAFT','COMPLETE') AND t.draft IS NULL AND t.draft_status IS NULL)
-          OR t.draft_status = 'FB_REQUESTED'
-        )
-      ORDER BY t.start_date
-      LIMIT p_limit
-      FOR UPDATE SKIP LOCKED
-    ),
-    upd AS (
-      UPDATE todolist AS t
-         SET draft_status = 'STARTED',
-             consumer     = p_consumer
-        FROM cte
-       WHERE t.id = cte.id
-       RETURNING
-         t.id,
-         t.user_id,
-         t.proc_inst_id,
-         t.proc_def_id,
-         t.activity_id,
-         t.activity_name,
-         t.start_date,
-         t.end_date,
-         t.description,
-         t.tool,
-         t.due_date,
-         t.tenant_id,
-         t.reference_ids,
-         t.adhoc,
-         t.assignees,
-         t.duration,
-         t.output,
-         t.retry,
-         t.consumer,
-         t.log,
-         t.draft,
-         t.project_id,
-         t.feedback,
-         t.updated_at,
-         t.username,
-         t.status,
-         t.agent_mode,
-         t.agent_orch,
-         t.temp_feedback,
-         t.draft_status,
-         cte.task_type
-    )
-    SELECT * FROM upd;
-END;
-$$ LANGUAGE plpgsql VOLATILE;
 
 -- 익명(anon) 역할에 실행 권한 부여
-GRANT EXECUTE ON FUNCTION public.fetch_pending_task(text, text, integer) TO anon;
-GRANT EXECUTE ON FUNCTION public.fetch_pending_task_dev(text, text, integer, text) TO anon;
+GRANT EXECUTE ON FUNCTION public.fetch_pending_task(text, text, integer, text) TO anon;
 
 
-CREATE TABLE env (
+CREATE TABLE IF NOT EXISTS env (
     key VARCHAR(255) NOT NULL,        -- 'browser_use'
     value TEXT,                       -- 시크릿 데이터 (JSON)
     tenant_id VARCHAR(255) PRIMARY KEY  -- 테넌트 ID
@@ -3604,9 +2960,13 @@ create index if not exists idx_tenant_skills_tenant
 
 alter table public.tenant_skills enable row level security;
 
+DROP POLICY IF EXISTS tenant_skills_insert_policy ON public.tenant_skills;
 create policy tenant_skills_insert_policy on public.tenant_skills for insert to authenticated with check (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS tenant_skills_select_policy ON public.tenant_skills;
 create policy tenant_skills_select_policy on public.tenant_skills for select to authenticated using (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS tenant_skills_update_policy ON public.tenant_skills;
 create policy tenant_skills_update_policy on public.tenant_skills for update to authenticated using (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS tenant_skills_delete_policy ON public.tenant_skills;
 create policy tenant_skills_delete_policy on public.tenant_skills for delete to authenticated using (tenant_id = public.tenant_id());
 
 
@@ -3699,6 +3059,7 @@ create index if not exists idx_resource_pr_reviews_pr_id
   on public.resource_pr_reviews (pr_id);
 
 -- updated_at 자동 갱신
+drop trigger if exists resource_pull_requests_updated_at on public.resource_pull_requests;
 create trigger resource_pull_requests_updated_at
   before update on public.resource_pull_requests
   for each row execute function update_updated_at_column();
@@ -3707,18 +3068,26 @@ create trigger resource_pull_requests_updated_at
 alter table public.resource_pull_requests enable row level security;
 alter table public.resource_pr_reviews enable row level security;
 
+DROP POLICY IF EXISTS resource_pull_requests_insert_policy ON public.resource_pull_requests;
 create policy resource_pull_requests_insert_policy on public.resource_pull_requests for insert to authenticated with check (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS resource_pull_requests_select_policy ON public.resource_pull_requests;
 create policy resource_pull_requests_select_policy on public.resource_pull_requests for select to authenticated using (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS resource_pull_requests_update_policy ON public.resource_pull_requests;
 create policy resource_pull_requests_update_policy on public.resource_pull_requests for update to authenticated using (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS resource_pull_requests_delete_policy ON public.resource_pull_requests;
 create policy resource_pull_requests_delete_policy on public.resource_pull_requests for delete to authenticated using (tenant_id = public.tenant_id());
 
+DROP POLICY IF EXISTS resource_pr_reviews_insert_policy ON public.resource_pr_reviews;
 create policy resource_pr_reviews_insert_policy on public.resource_pr_reviews for insert to authenticated with check (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS resource_pr_reviews_select_policy ON public.resource_pr_reviews;
 create policy resource_pr_reviews_select_policy on public.resource_pr_reviews for select to authenticated using (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS resource_pr_reviews_update_policy ON public.resource_pr_reviews;
 create policy resource_pr_reviews_update_policy on public.resource_pr_reviews for update to authenticated using (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS resource_pr_reviews_delete_policy ON public.resource_pr_reviews;
 create policy resource_pr_reviews_delete_policy on public.resource_pr_reviews for delete to authenticated using (tenant_id = public.tenant_id());
 
 
-create table
+create table if not exists
   public.agent_knowledge_history (
     id uuid not null default gen_random_uuid (),
     knowledge_type text not null,
@@ -3929,9 +3298,13 @@ create index if not exists idx_document_pages_tenant_file
 
 ALTER TABLE public.document_pages ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS document_pages_select_policy ON public.document_pages;
 CREATE POLICY document_pages_select_policy ON public.document_pages FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS document_pages_insert_policy ON public.document_pages;
 CREATE POLICY document_pages_insert_policy ON public.document_pages FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS document_pages_update_policy ON public.document_pages;
 CREATE POLICY document_pages_update_policy ON public.document_pages FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS document_pages_delete_policy ON public.document_pages;
 CREATE POLICY document_pages_delete_policy ON public.document_pages FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
 
 
@@ -4048,6 +3421,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS tenant_git_config_updated_at ON tenant_git_config;
 CREATE TRIGGER tenant_git_config_updated_at
     BEFORE UPDATE ON tenant_git_config
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -4055,7 +3429,7 @@ CREATE TRIGGER tenant_git_config_updated_at
 -- ================================================================
 -- is_default 무결성: 테넌트당 is_default=true가 최대 1개여야 함
 -- ================================================================
-CREATE UNIQUE INDEX tenant_git_config_one_default
+CREATE UNIQUE INDEX IF NOT EXISTS tenant_git_config_one_default
     ON tenant_git_config (tenant_id)
     WHERE is_default = true;
 
@@ -4064,7 +3438,11 @@ CREATE UNIQUE INDEX tenant_git_config_one_default
 -- ================================================================
 ALTER TABLE tenant_git_config ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS tenant_git_config_insert_policy ON tenant_git_config;
 CREATE POLICY tenant_git_config_insert_policy ON tenant_git_config FOR INSERT TO authenticated WITH CHECK (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS tenant_git_config_select_policy ON tenant_git_config;
 CREATE POLICY tenant_git_config_select_policy ON tenant_git_config FOR SELECT TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS tenant_git_config_update_policy ON tenant_git_config;
 CREATE POLICY tenant_git_config_update_policy ON tenant_git_config FOR UPDATE TO authenticated USING (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS tenant_git_config_delete_policy ON tenant_git_config;
 CREATE POLICY tenant_git_config_delete_policy ON tenant_git_config FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
