@@ -1,0 +1,183 @@
+# 벤치 스택: Postgres + PostgREST(+ 경로 보정 nginx) + 폴링 워커.
+#
+# 운영과 같은 호출 경로를 쓴다: SDK → supabase-py → HTTP → PostgREST → RPC.
+# "psql 로 함수를 직접 불러서 됐다" 는 운영에서 그 경로가 막히거나 다르게
+# 동작하는 경우를 못 잡는다.
+#
+# 네임스페이스는 run_bench.sh 가 만든다(lease-bench).
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_PASSWORD
+              value: bench
+            - name: POSTGRES_DB
+              value: bench
+            # 벤치 DB 는 파드 수명만 살면 된다. 디스크로 내려 쓰지 않으면
+            # 측정이 디스크 지연에 흔들리지 않는다.
+            - name: PGDATA
+              value: /dev/shm/pgdata
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "bench"]
+            initialDelaySeconds: 3
+            periodSeconds: 2
+      volumes:
+        - name: initdb
+          configMap:
+            name: bench-schema
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgrest
+spec:
+  selector:
+    app: pgrest
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgrest
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pgrest
+  template:
+    metadata:
+      labels:
+        app: pgrest
+    spec:
+      containers:
+        - name: postgrest
+          image: postgrest/postgrest:v12.2.3
+          env:
+            - name: PGRST_DB_URI
+              value: postgres://authenticator:bench@postgres:5432/bench
+            - name: PGRST_DB_SCHEMAS
+              value: public
+            - name: PGRST_DB_ANON_ROLE
+              value: anon
+            - name: PGRST_JWT_SECRET
+              value: bench-jwt-secret-0123456789-abcdefgh
+            - name: PGRST_SERVER_PORT
+              value: "3000"
+            # 워커 수보다 넉넉히. 커넥션이 말라서 생기는 지연을 lease 만료로
+            # 착각하지 않게 한다.
+            - name: PGRST_DB_POOL
+              value: "20"
+        # supabase-py 는 모든 요청을 `<SUPABASE_URL>/rest/v1/...` 로 보낸다.
+        # PostgREST 는 루트에서 서비스하므로 그 접두어를 떼 준다.
+        - name: path-fix
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: bench-nginx
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bench-nginx
+data:
+  default.conf: |
+    server {
+      listen 8080;
+      location /rest/v1/ {
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_set_header Authorization $http_authorization;
+      }
+      location / {
+        proxy_pass http://127.0.0.1:3000/;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  # run_bench.sh 가 시나리오마다 조정한다.
+  replicas: 3
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      # 벤치에서는 kill -9 로 죽이는 것이 요점이므로 유예를 짧게 둔다.
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: worker
+          image: bench-worker:dev
+          imagePullPolicy: Never
+          env:
+            - name: SUPABASE_URL
+              value: http://pgrest:8080
+            - name: SUPABASE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bench-anon-key
+                  key: key
+            - name: ENV
+              value: dev
+            - name: AGENT_ORCH
+              value: bench-agent
+            # ---- lease 설정 ----
+            # 운영 기본값(120초/30초)과 같은 비율(1/4)을 유지하면서 짧게 줄였다.
+            # 재클레임까지 분 단위로 기다리지 않기 위한 것이고, 비율이 같으므로
+            # "연속 세 번 놓쳐도 버틴다" 는 성질도 같다.
+            - name: TASK_LEASE_SECONDS
+              value: "20"
+            - name: TASK_LEASE_HEARTBEAT_SECONDS
+              value: "5"
+            - name: TASK_MAX_CLAIMS
+              value: "3"
+            # 한 작업의 수행 시간. lease 보다 충분히 길어야 "수행 중 연장" 과
+            # "수행 중 사망" 을 구분해 볼 수 있다.
+            - name: WORK_SECONDS
+              value: "60"
+            - name: WORKER_MODE
+              value: sdk

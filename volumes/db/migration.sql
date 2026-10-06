@@ -2585,3 +2585,32 @@ CREATE POLICY delegation_history_update_policy ON public.delegation_history
 DROP POLICY IF EXISTS delegation_history_delete_policy ON public.delegation_history;
 CREATE POLICY delegation_history_delete_policy ON public.delegation_history
     FOR DELETE TO authenticated USING (tenant_id = public.tenant_id());
+
+-- ===============================================
+-- todolist: 작업 점유에 만료 시한(lease)을 둔다
+-- ===============================================
+-- 지금까지 점유는 `consumer` 에 점유자 이름을 적는 것뿐이었고 만료가 없었다.
+-- 워커가 kill -9 로 죽으면 그 행은 draft_status='STARTED' 로 영구히 남아 아무도
+-- 다시 집지 않는다(고아 STARTED). lease_until 로 점유에 시한을 주고, 살아 있는
+-- 워커가 주기적으로 연장한다. 연장이 끊기면 fetch_pending_task 가 그 행을 다시
+-- 집어간다.
+--
+-- 운영 중 적용 가능하다: 두 컬럼 모두 nullable 이거나 상수 기본값이라
+-- 테이블 재작성 없이 메타데이터만 바뀐다(PG 11+).
+--
+-- lease_until 이 NULL 인 의미: "만료 개념 없이 점유된 행".
+--   - 마이그레이션 이전에 이미 STARTED 로 남아 있던 기존 행
+--   - lease 를 모르는 구버전 SDK 워커가 집은 행(p_lease_seconds 를 넘기지 않음)
+-- 이 행들은 회수 대상이 아니다. 연장할 주체가 없는 점유를 회수하면 그 워커가
+-- 아직 살아서 일하는 중일 때 같은 작업이 두 번 수행된다. NULL 은 예전 동작
+-- 그대로 둔다 — 유실은 늘지 않고, 중복 수행은 생기지 않는다.
+ALTER TABLE public.todolist ADD COLUMN IF NOT EXISTS lease_until timestamptz;
+
+-- 점유된 횟수(최초 클레임 + 회수 클레임). 무한 재클레임을 막는 상한의 근거다.
+-- 기존 `retry` 컬럼을 쓰지 않는다: 그 컬럼은 다른 서비스가 쓸 수 있고 의미도
+-- 다르다(작업 자체의 재시도). 이 값은 "점유가 몇 번 일어났는가" 다.
+ALTER TABLE public.todolist ADD COLUMN IF NOT EXISTS claim_count integer NOT NULL DEFAULT 0;
+
+-- 회수 후보를 찾는 조건 그대로의 인덱스. 모든 워커가 이 조건으로 폴링한다.
+CREATE INDEX IF NOT EXISTS idx_todolist_lease_reclaim
+    ON public.todolist (status, draft_status, lease_until);
