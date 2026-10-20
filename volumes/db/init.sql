@@ -3891,6 +3891,21 @@ comment on column public.handover_events.origin_room_id is
 comment on column public.handover_events.case_id is
     '프로세스 마이닝의 Case ID. 기본값은 origin_room_id 이며 업무 키 도입 시 분리될 수 있다.';
 
+-- ============================================================================
+-- 스레드 종료(closed_at)
+--
+-- 스레드는 마지막으로 받은 할 일이 완료돼야 끝난 건이다. 에이전트가 받은 할 일은
+-- 에이전트가 마치면 자동으로 완료되지만, 넘긴 사람이 그 방에 남아 결과를 다음
+-- 사람에게 이어 줄 수 있어 할 일 상태만으로는 끝을 알 수 없다. 그 방에서 넘긴
+-- 사람이 '업무 종료' 를 누르면 마지막 인계 행에 이 시각을 남긴다.
+-- ============================================================================
+
+alter table public.handover_events
+    add column if not exists closed_at timestamptz;
+
+comment on column public.handover_events.closed_at is
+    '넘긴 사람이 업무 종료를 누른 시각. 마지막 인계가 에이전트에게 간 스레드의 끝을 판정한다.';
+
 
 -- ============================================================================
 -- 역량(capability) 기반 조직 모델
