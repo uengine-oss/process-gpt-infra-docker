@@ -3906,6 +3906,24 @@ alter table public.handover_events
 comment on column public.handover_events.closed_at is
     '넘긴 사람이 업무 종료를 누른 시각. 마지막 인계가 에이전트에게 간 스레드의 끝을 판정한다.';
 
+-- ============================================================================
+-- 병렬 인계 묶음(group_id)
+--
+-- 한 번의 인계로 여러 사람(에이전트)에게 일을 나눠 줄 수 있다. 받는 사람마다 한 행을
+-- 남기고, 같은 인계에서 나온 행은 같은 group_id 로 묶는다. 묶음 안에서 다음 할 일이
+-- 서로 다르면 병렬, 같으면 다중 인스턴스로 도출한다. 한 사람에게 넘긴 행은 비워 둔다.
+-- ============================================================================
+
+alter table public.handover_events
+    add column if not exists group_id uuid;
+
+create index if not exists handover_events_group_idx
+    on public.handover_events (group_id)
+    where group_id is not null;
+
+comment on column public.handover_events.group_id is
+    '한 번의 인계로 여러 명에게 넘긴 행들의 묶음. 한 사람에게 넘긴 인계는 null.';
+
 
 -- ============================================================================
 -- 역량(capability) 기반 조직 모델
