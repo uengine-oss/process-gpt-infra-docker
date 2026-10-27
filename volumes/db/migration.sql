@@ -2614,3 +2614,19 @@ ALTER TABLE public.todolist ADD COLUMN IF NOT EXISTS claim_count integer NOT NUL
 -- 회수 후보를 찾는 조건 그대로의 인덱스. 모든 워커가 이 조건으로 폴링한다.
 CREATE INDEX IF NOT EXISTS idx_todolist_lease_reclaim
     ON public.todolist (status, draft_status, lease_until);
+
+-- ===============================================
+-- handover_events: 업무 종료·병렬 인계 묶음·워크트리 시작 커밋
+-- ===============================================
+-- 세 컬럼 모두 init.sql 에도 같은 ALTER 가 있다. scripts/migrate-db.sh 는 init.sql 만
+-- 다시 실행하므로 그쪽을 지우지 않는다. 여기는 init.sql 을 다시 돌리지 않는 설치를 위한 것이다.
+-- 모두 nullable 이라 테이블 재작성 없이 메타데이터만 바뀐다.
+ALTER TABLE public.handover_events ADD COLUMN IF NOT EXISTS closed_at timestamptz;
+
+ALTER TABLE public.handover_events ADD COLUMN IF NOT EXISTS group_id uuid;
+
+CREATE INDEX IF NOT EXISTS handover_events_group_idx
+    ON public.handover_events (group_id)
+    WHERE group_id IS NOT NULL;
+
+ALTER TABLE public.handover_events ADD COLUMN IF NOT EXISTS base_commit_id uuid;
