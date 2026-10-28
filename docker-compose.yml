@@ -397,6 +397,8 @@ services:
       LLM_PROXY_API_KEY: ${LLM_PROXY_API_KEY}
       POLLING_INTERVAL: "5"
       OPENAI_EMBEDDING_MODEL: "text-embedding-3-small"
+      # 채팅에 붙인 문서의 청크를 memento 에서 읽는다(없으면 host.docker.internal:8005 로 가서 0개 → 「사전 처리된 청크가 없습니다」)
+      MEMENTO_BASE_URL: http://memento:8005
       LOG_LEVEL: "INFO"
       ENABLE_OCR: "true"
       OCR_ENGINE: "openai_vision"
@@ -404,6 +406,8 @@ services:
       NEO4J_URI: ${NEO4J_URI}
       NEO4J_USER: ${NEO4J_USER}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      # 프로세스 그래프는 Neo4j 가 아니라 Postgres 의 Apache AGE 에 쓴다(없으면 localhost:5432 → 「Neo4j 선삭제 실패」).
+      AGE_DSN: postgresql://postgres:${AGE_POSTGRES_PASSWORD:-postgres}@age-postgres:5432/postgres
     healthcheck:
       test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8012/api/health', timeout=3).read()" ]
       interval: 20s
@@ -414,6 +418,7 @@ services:
       - db
       - rest
       - neo4j
+      - age-postgres
 
   process-gpt-office-mcp:
     image: ghcr.io/uengine-oss/process-gpt-office-mcp:8ab48aa
@@ -432,6 +437,8 @@ services:
       SUPABASE_URL: ${SUPABASE_INTERNAL_URL}
       SUPABASE_KEY: ${SERVICE_ROLE_KEY}
       OFFICE_MCP_LLM_PROVIDER: openai
+      # 보고서 근거 검색(기본값은 없는 이름 memento-service)
+      MEMENTO_SERVICE_URL: http://memento:8005
       CUSTOM_LLM_BASE_URL: http://litellm-proxy:4000/v1
     depends_on:
       - litellm-proxy
@@ -922,6 +929,25 @@ services:
       - ./volumes/db/init.sql:/docker-entrypoint-initdb.d/init-scripts/100-init.sql:Z
       - db-config:/etc/postgresql-custom
 
+  age-postgres:
+    # bpmn-extractor(문서 → 프로세스)의 프로세스 그래프. Supabase 의 postgres 이미지엔 Apache AGE 가 없어서
+    # 따로 둔다(개발용 docker-infra 와 같은 이미지). 다른 컨테이너만 붙으니 호스트 포트는 열지 않는다.
+    image: apache/age:release_PG16_1.5.0
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${AGE_POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: postgres
+    volumes:
+      - age-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   neo4j:
     container_name: neo4j
     image: neo4j:5
@@ -960,6 +986,7 @@ services:
 
 volumes:
   litellm-db-data:
+  age-postgres-data:
   db-config:
   memento-chroma:
   skills-storage:
