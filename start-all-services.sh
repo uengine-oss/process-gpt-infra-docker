@@ -13,6 +13,13 @@ set -e
 
 cd "$(dirname "$0")"
 
+# Apple Silicon(arm64): ghcr.io/uengine-oss 이미지 대부분이 amd64 전용이라, 지정이 없으면 amd64 로 받아
+# 에뮬레이션(Docker Desktop 의 Rosetta)으로 돌린다. 안 하면 「no matching manifest for linux/arm64」로 멈춘다.
+if [ -z "${DOCKER_DEFAULT_PLATFORM:-}" ] && [ "$(uname -m)" = "arm64" -o "$(uname -m)" = "aarch64" ]; then
+    export DOCKER_DEFAULT_PLATFORM=linux/amd64
+    echo "arm64 host: DOCKER_DEFAULT_PLATFORM=linux/amd64 (amd64 images run under emulation)"
+fi
+
 ROOT="$(pwd)"
 ENV_FILE="${ROOT}/.env"
 COMPOSE_FILES=(
@@ -261,7 +268,12 @@ start_infra() {
     echo ">>> Starting infra stack (db, supabase, neo4j, litellm) and waiting for HEALTHY..."
     # --wait blocks until every started container is healthy / running.
     # supabase-db needs ~30-60s on first boot to finish init-scripts.
-    compose up -d --wait "${INFRA_STACK[@]}"
+    # 첫 부팅에는 auth·storage 가 DB 초기화가 끝나기 전에 떠서 unhealthy 로 끝나곤 한다 — 잠시 뒤 한 번 더 기다린다.
+    if ! compose up -d --wait "${INFRA_STACK[@]}"; then
+        echo ">>> Some infra containers were not healthy yet (usual on first boot) — retrying in 10s..."
+        sleep 10
+        compose up -d --wait "${INFRA_STACK[@]}"
+    fi
 }
 
 start_gateway() {
