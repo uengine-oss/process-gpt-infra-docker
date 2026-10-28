@@ -136,11 +136,13 @@ services:
       PYTHONUNBUFFERED: "1"
       MEMENTO_LLM_PROVIDER: openai
       MEMENTO_EMBEDDING_PROVIDER: openai
-      LLM_BASE_URL: http://litellm-proxy:4000/v1
+      # 다른 서비스와 같은 LLM 엔드포인트·키로. litellm-proxy 를 거치면 그 마스터 키가 필요하고(없으면 401),
+      # qwen 임베딩(2560차원)은 DB 의 vector(1536) 와 맞지 않는다.
+      LLM_BASE_URL: ${LLM_PROXY_URL}
       LLM_MODEL: ${LLM_MODEL}
       OPENAI_API_KEY: ${LLM_PROXY_API_KEY}
-      EMBEDDING_BASE_URL: http://litellm-proxy:4000/v1
-      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-qwen/qwen3-embedding-4b}
+      EMBEDDING_BASE_URL: ${LLM_PROXY_URL}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
       SUPABASE_URL: ${SUPABASE_INTERNAL_URL}
       SUPABASE_KEY: ${SERVICE_ROLE_KEY}
       CHROMA_PERSIST_DIRECTORY: "/usr/src/app/chroma_db"
