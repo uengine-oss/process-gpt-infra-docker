@@ -9,6 +9,7 @@
 | 폴더 | 내용 | 적용 |
 |---|---|---|
 | `migrations/` | 프론트 `supabase/migrations/` 의 날짜 이름 파일 97개 — compose 가 고정한 프론트 이미지(`process-gpt:4345a16`)와 같은 커밋 | 이름 순서대로 한 번씩, `public._app_migrations` 에 기록 |
+| `services/` | 서비스가 따로 가진 스키마 — memento `sql/` 8개(`process-gpt-memento:d9295f3` 와 같은 커밋, 의존 순서대로 번호). 없으면 지식 베이스 화면이 「column knowledge_files.has_text does not exist」 | 한 번씩, 기록 |
 | `post/` | 보정(멱등) | 매번 |
 
 넣지 않은 파일:
