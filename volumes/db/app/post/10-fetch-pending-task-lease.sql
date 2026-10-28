@@ -1,3 +1,7 @@
+-- 프론트 마이그레이션 202602230001 이 만든 옛 형태 — (p_agent_orch, p_consumer, p_env, p_limit) 이름 호출이
+-- 아래 임대 버전과 구분되지 않아 PostgREST 가 PGRST203(Could not choose the best candidate function)으로 거절한다.
+DROP FUNCTION IF EXISTS public.fetch_pending_task(text, text, text, integer);
+DROP FUNCTION IF EXISTS public.fetch_pending_task(text, text, integer);
 DROP FUNCTION IF EXISTS public.fetch_pending_task(text, text, integer, text);
 DROP FUNCTION IF EXISTS public.fetch_pending_task(text, text, integer, text, integer);
 DROP FUNCTION IF EXISTS public.fetch_pending_task(text, text, integer, text, integer, integer);
