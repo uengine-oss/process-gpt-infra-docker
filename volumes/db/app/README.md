@@ -25,6 +25,8 @@
   candidate function」(PGRST203)로 실패한다. `init.sql` 의 임대(lease) 버전으로 되돌리고 옛 형태를 지운다.
 - `20-local-single-tenant.sql` — 로컬 설치(한 회사, 테넌트 `localhost`)용 가입 처리. 가입자를 `localhost` 에 넣고 첫 가입자를
   관리자로, 이후 가입자를 승인된 사용자로 둔다(기본 스키마는 SaaS 기준이라 `process-gpt` 테넌트의 승인 대기로 넣는다).
+- `30-event-type-enum.sql` — `init.sql` 의 `event_type_enum` 에 없는 값 11개(`waiting_for_user` 등)를 더한다. 없으면 bpmn-extractor 가
+  사람에게 확인을 물을 때 이벤트를 못 남겨(「invalid input value for enum event_type_enum」) 질문이 화면에 오지 않고 작업이 멈춘다.
 
 프론트 이미지 고정을 바꾸면 `migrations/` 도 같은 커밋에서 다시 가져온다:
 
