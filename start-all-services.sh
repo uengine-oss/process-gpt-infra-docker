@@ -13,13 +13,6 @@ set -e
 
 cd "$(dirname "$0")"
 
-# Apple Silicon(arm64): ghcr.io/uengine-oss 이미지 대부분이 amd64 전용이라, 지정이 없으면 amd64 로 받아
-# 에뮬레이션(Docker Desktop 의 Rosetta)으로 돌린다. 안 하면 「no matching manifest for linux/arm64」로 멈춘다.
-if [ -z "${DOCKER_DEFAULT_PLATFORM:-}" ] && [ "$(uname -m)" = "arm64" -o "$(uname -m)" = "aarch64" ]; then
-    export DOCKER_DEFAULT_PLATFORM=linux/amd64
-    echo "arm64 host: DOCKER_DEFAULT_PLATFORM=linux/amd64 (amd64 images run under emulation)"
-fi
-
 ROOT="$(pwd)"
 ENV_FILE="${ROOT}/.env"
 COMPOSE_FILES=(

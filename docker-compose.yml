@@ -42,6 +42,7 @@ services:
 
   frontend:
     image: ghcr.io/uengine-oss/process-gpt:4345a16
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     build:
       context: ./services/frontend
       dockerfile: Dockerfile
@@ -54,6 +55,7 @@ services:
 
   completion:
     image: ghcr.io/uengine-oss/process-gpt-completion:517238e
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     build:
       context: ./services/completion
       dockerfile: Dockerfile
@@ -96,6 +98,7 @@ services:
 
   polling-service:
     image: ghcr.io/uengine-oss/process-gpt-polling-service:517238e
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     ports:
       - "8010:8000"
     environment:
@@ -123,6 +126,7 @@ services:
 
   memento:
     image: ghcr.io/uengine-oss/process-gpt-memento:d9295f3
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     build:
       context: ./services/memento
       dockerfile: Dockerfile
@@ -172,6 +176,7 @@ services:
 
   openai-deep-research:
     image: ghcr.io/uengine-oss/openai-deep-research:49ddcd9
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     build:
       context: ./services/openai-deep-research
       dockerfile: Dockerfile
@@ -194,6 +199,7 @@ services:
 
   a2a-orch:
     image: ghcr.io/uengine-oss/process-gpt-a2a-orch:241433c
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     build:
       context: ./services/a2a-orch
       dockerfile: Dockerfile
@@ -213,6 +219,7 @@ services:
 
   agent-router:
     image: ghcr.io/uengine-oss/agent-router:latest
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     environment:
       HOST: "0.0.0.0"
       PORT: "8001"
@@ -244,6 +251,7 @@ services:
 
   react-voice-agent:
     image: ghcr.io/uengine-oss/react-voice-agent:999ca2b
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     build:
       context: ./services/react-voice-agent
       dockerfile: Dockerfile
@@ -259,6 +267,7 @@ services:
 
   base-agent-langchain-react:
     image: ghcr.io/uengine-oss/process-gpt-base-agent-langchain-react:e566a60
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     build:
       context: ./services/base-agent-langchain-react
       dockerfile: Dockerfile
@@ -298,6 +307,7 @@ services:
 
   computer-use:
     image: ghcr.io/uengine-oss/computer-use:latest
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     build:
       context: ./services/computer-use
       dockerfile: Dockerfile
@@ -310,6 +320,7 @@ services:
 
   agent-feedback:
     image: ghcr.io/uengine-oss/agent-feedback:84d2a0e
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     build:
       context: ./services/agent-feedback
       dockerfile: Dockerfile
@@ -335,6 +346,7 @@ services:
 
   process-gpt-analytic:
     image: ghcr.io/uengine-oss/process-gpt-analytic:f35f74e
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     build:
       context: ./services/analytic
       dockerfile: Dockerfile
@@ -366,6 +378,7 @@ services:
       context: ./services/bpmn-extractor
       dockerfile: Dockerfile
     image: ghcr.io/uengine-oss/process-gpt-bpmn-extractor:c7992ce
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     entrypoint: [ "/bin/bash", "-lc", "cd /app && uv run --with process-gpt-agent-sdk==0.4.13 --with supabase python pdf2bpmn_agent_server.py" ]
     ports:
       - "8012:8012"
@@ -402,6 +415,7 @@ services:
 
   process-gpt-office-mcp:
     image: ghcr.io/uengine-oss/process-gpt-office-mcp:8ab48aa
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     build:
       context: ./services/office-mcp
       dockerfile: Dockerfile
@@ -424,6 +438,7 @@ services:
 
   process-gpt-deep-research:
     image: ghcr.io/uengine-oss/process-gpt-deep-research:8a343e2
+    platform: linux/amd64   # arm64 이미지가 없다 — Apple Silicon 은 에뮬레이션으로
     build:
       context: ./services/deep-research
       dockerfile: Dockerfile
