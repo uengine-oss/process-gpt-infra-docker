@@ -343,6 +343,8 @@ services:
       LLM_PROXY_URL: ${LLM_PROXY_URL}
       LLM_PROXY_API_KEY: ${LLM_PROXY_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # 스킬 개선 제안을 스킬 저장소(deepagents)에 반영 — 없으면 기본값 localhost:8888 로 가서 컨테이너 안에서 연결 거부
+      SKILL_API_BASE_URL: http://deepagents:8888
       PORT: "6789"
     depends_on:
       - db
