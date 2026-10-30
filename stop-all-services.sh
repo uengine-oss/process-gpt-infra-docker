@@ -60,6 +60,13 @@ else
 fi
 
 if [ "${WIPE}" -eq 1 ]; then
+    # deepagents 가 docker.sock 으로 띄운 샌드박스(deepagent-sandbox-<tenant>)는 compose 밖이라 down 으로 지워지지 않는다.
+    # 남겨 두면 지워진 작업 볼륨을 문 채 다음 설치에서 재사용돼 딥 에이전트가 파일을 못 쓴다.
+    SANDBOXES=$(docker ps -aq --filter "label=processgpt.sandbox.contract" 2>/dev/null)
+    if [ -n "${SANDBOXES}" ]; then
+        echo ">>> Removing deepagents sandbox containers..."
+        docker rm -f ${SANDBOXES} >/dev/null && echo "    removed: $(echo ${SANDBOXES} | wc -w | tr -d ' ') sandbox(es)"
+    fi
     echo ">>> Wiping bind-mount directories (db data / storage / logs)..."
     for p in "volumes/db/data" "volumes/storage" "volumes/logs"; do
         if [ -d "${ROOT}/${p}" ]; then
