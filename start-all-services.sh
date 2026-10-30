@@ -90,6 +90,7 @@ ALL_SERVICES=(
     "Computer-Use|computer-use"
     "Agent Feedback|agent-feedback"
     "Analytics (ETL)|process-gpt-analytic"
+    "Strategy Board (BSC / KPI)|strategy"
     "BPMN Extractor (PDF -> BPMN)|bpmn-extractor"
     "Office MCP|process-gpt-office-mcp"
     "Deep Research|process-gpt-deep-research"

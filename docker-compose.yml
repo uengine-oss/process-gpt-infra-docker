@@ -368,16 +368,26 @@ services:
       ETL_INTERVAL_SECONDS: "60"
       OPENAI_API_KEY: ${LLM_PROXY_API_KEY}
       OPENAI_BASE_URL: http://litellm-proxy:4000/v1
+      # 전략보드 「기여도」 탭(/api/dashboard/contribution)이 부르는 서비스 — 기본값 localhost:8014 는 컨테이너 안에서 닿지 않는다
+      STRATEGY_SERVICE_URL: http://strategy:8000
+      AGENT_FEEDBACK_SERVICE_URL: http://agent-feedback:6789
     healthcheck:
       test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()" ]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 30s
+    # 앱 마이그레이션(db-migrate)이 DB·역할 시간대를 Asia/Seoul 로 바꾼 뒤에 연결해야 한다 — 먼저 뜨면 풀의 연결이 UTC 로 남아
+    # timestamp(벽시계 KST) 칸을 UTC 로 읽어 모든 작업 소요가 9시간 늘었다(튜토리얼 VM 실측)
     depends_on:
-      - litellm-proxy
-      - db
-      - rest
+      litellm-proxy:
+        condition: service_started
+      db:
+        condition: service_started
+      rest:
+        condition: service_started
+      db-migrate:
+        condition: service_completed_successfully
 
   bpmn-extractor:
     build:
@@ -580,6 +590,12 @@ services:
       MEASURE_AUTO_START: "true"
       MEASURE_INTERVAL_SECONDS: "60"
       SURVEY_WATCH_INTERVAL_SECONDS: "30"
+      # 온톨로지 그래프(Apache AGE)는 Supabase Postgres 가 아니라 age-postgres 에 있다(bpmn-extractor 와 같은 곳)
+      GRAPH_DB_HOST: age-postgres
+      GRAPH_DB_PORT: "5432"
+      GRAPH_DB_NAME: postgres
+      GRAPH_DB_USER: postgres
+      GRAPH_DB_PASSWORD: ${AGE_POSTGRES_PASSWORD:-postgres}
       OPENAI_API_KEY: ${LLM_PROXY_API_KEY:-${OPENAI_API_KEY}}
       OPENAI_BASE_URL: ${LLM_PROXY_URL:-${OPENAI_BASE_URL}}
       MODEL: ${LLM_MODEL:-gpt-4.1}
@@ -590,6 +606,8 @@ services:
       retries: 3
       start_period: 30s
     depends_on:
+      age-postgres:
+        condition: service_healthy
       db:
         condition: service_healthy
       rest:
