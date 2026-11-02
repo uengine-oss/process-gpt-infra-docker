@@ -227,49 +227,13 @@ BEGIN
       RAISE NOTICE 'Skipping auth.users trigger setup: %', SQLERRM;
   END;
 
-  -- 3) Supabase Auth: identities 테이블 (신규 버전 signup에서 사용)
-  -- 권한이 없으면 스킵. 이미 존재하면 아무 것도 하지 않음.
-  IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'auth')
-     AND NOT EXISTS (
-       SELECT 1
-       FROM information_schema.tables
-       WHERE table_schema = 'auth' AND table_name = 'identities'
-     )
-  THEN
-    BEGIN
-      EXECUTE $ddl$
-        CREATE TABLE auth.identities (
-          id uuid not null default gen_random_uuid(),
-          user_id uuid not null,
-          identity_data jsonb not null,
-          provider text not null,
-          provider_id text not null,
-          last_sign_in_at timestamp with time zone null,
-          created_at timestamp with time zone not null default now(),
-          updated_at timestamp with time zone not null default now(),
-          email text generated always as (lower(nullif(identity_data ->> 'email', ''))) stored,
-          constraint identities_pkey primary key (id),
-          constraint identities_user_id_fkey foreign key (user_id) references auth.users (id) on delete cascade
-        )
-      $ddl$;
-
-      EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS identities_provider_provider_id_idx
-        ON auth.identities (provider, provider_id)';
-      EXECUTE 'CREATE INDEX IF NOT EXISTS identities_user_id_idx
-        ON auth.identities (user_id)';
-      EXECUTE 'CREATE INDEX IF NOT EXISTS identities_email_idx
-        ON auth.identities (email)';
-    EXCEPTION
-      WHEN insufficient_privilege OR undefined_table OR invalid_schema_name THEN
-        RAISE NOTICE 'Skipping auth.identities creation: %', SQLERRM;
-    END;
-  END IF;
+  -- 3) auth.identities 는 미리 만들지 않는다 — GoTrue 가 기동하며 자기 마이그레이션으로 만든다.
+  --    최종 형태로 미리 만들어 두면 GoTrue 의 단계별 마이그레이션과 부딪혀 auth 컨테이너가 뜨지 않는다.
 
   -- 4) 권한/검색경로 설정 (가능하면 적용)
   BEGIN
     IF EXISTS (select 1 from pg_roles where rolname = 'supabase_auth_admin') THEN
       EXECUTE 'GRANT USAGE ON SCHEMA auth TO supabase_auth_admin';
-      EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth.identities TO supabase_auth_admin';
       EXECUTE 'ALTER ROLE supabase_auth_admin SET search_path = auth, public, extensions';
     END IF;
   EXCEPTION
@@ -2643,7 +2607,7 @@ RETURNS TABLE(
   username text,
   status public.todo_status,
   agent_mode public.agent_mode,
-  agent_orch public.agent_orch,
+  agent_orch text,
   temp_feedback text,
   draft_status public.draft_status,
   query text,
@@ -2707,7 +2671,7 @@ BEGIN
          t.username,
          t.status,
          t.agent_mode::public.agent_mode,
-         t.agent_orch::public.agent_orch,
+         t.agent_orch,
          t.temp_feedback,
          t.draft_status,
          t.query,
@@ -3675,11 +3639,11 @@ CREATE OR REPLACE FUNCTION public.decide_feedback_proposal_target(
     p_decided_by_name   text,
     p_decided_by_email  text,
     p_decision_note     text
-) RETURNS public.skill_feedback_proposals
+) RETURNS public.feedback_proposals
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    v_row         public.skill_feedback_proposals;
+    v_row         public.feedback_proposals;
     v_targets     jsonb;
     v_elem        jsonb;
     v_found       boolean := false;
@@ -3687,7 +3651,7 @@ DECLARE
     i             int;
 BEGIN
     SELECT * INTO v_row
-    FROM public.skill_feedback_proposals
+    FROM public.feedback_proposals
     WHERE id = p_batch_id AND status = 'PROPOSED'
     FOR UPDATE;
 
@@ -3723,7 +3687,7 @@ BEGIN
         END IF;
     END LOOP;
 
-    UPDATE public.skill_feedback_proposals
+    UPDATE public.feedback_proposals
     SET targets = v_targets,
         status = CASE WHEN v_all_decided THEN 'RESOLVED' ELSE status END
     WHERE id = p_batch_id

@@ -90,6 +90,7 @@ ALL_SERVICES=(
     "Computer-Use|computer-use"
     "Agent Feedback|agent-feedback"
     "Analytics (ETL)|process-gpt-analytic"
+    "Strategy Board (BSC / KPI)|strategy"
     "BPMN Extractor (PDF -> BPMN)|bpmn-extractor"
     "Office MCP|process-gpt-office-mcp"
     "Deep Research|process-gpt-deep-research"
@@ -261,7 +262,12 @@ start_infra() {
     echo ">>> Starting infra stack (db, supabase, neo4j, litellm) and waiting for HEALTHY..."
     # --wait blocks until every started container is healthy / running.
     # supabase-db needs ~30-60s on first boot to finish init-scripts.
-    compose up -d --wait "${INFRA_STACK[@]}"
+    # 첫 부팅에는 auth·storage 가 DB 초기화가 끝나기 전에 떠서 unhealthy 로 끝나곤 한다 — 잠시 뒤 한 번 더 기다린다.
+    if ! compose up -d --wait "${INFRA_STACK[@]}"; then
+        echo ">>> Some infra containers were not healthy yet (usual on first boot) — retrying in 10s..."
+        sleep 10
+        compose up -d --wait "${INFRA_STACK[@]}"
+    fi
 }
 
 start_gateway() {
