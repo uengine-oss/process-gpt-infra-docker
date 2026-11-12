@@ -3826,6 +3826,99 @@ create policy handover_events_delete_policy on public.handover_events
 
 
 -- ============================================================================
+-- 프로세스 식별: 업무 범주와 관리자 결정 (general-intent-grouping, 2026-11-12)
+--
+-- 식별 화면은 인계 스레드(origin_room_id = 사례)를 "무엇을 요청받은 일인지"(업무 범주)로 묶는다.
+-- 범주 판단 규칙은 process-miner(POST /categories)에 있고, 그 서비스는 저장하지 않는다.
+-- 판단 결과와 관리자 결정은 여기에 저장해 두고, 식별할 때마다 process-miner 에 넘긴다.
+--
+-- handover_case_categories   사례별 범주. 끝난 사례에 한 번 판단해 저장한다(다시 판단하지 않는다).
+--                            category_by = 'admin' 은 관리자가 정한 범주 — 다음 판단의 예시가 된다.
+-- handover_process_decisions 관리자가 본 업무 묶음(경계). 묶음 하나로 고정하고, 새 사례는 제안으로 둔다.
+--   core_activities  관리자가 확정한 필수 단계(confirmed_steps 에 있는 단계만 확정, 나머지는 빈도 초안)
+--   case_ids         관리자가 확인한 사례 — 묶음의 모양은 이 사례로만 그린다
+--   exclude          이 묶음이 아니라고 한 사례
+--   status           shown(화면에 보임) | confirmed(관리자가 맞다고 함)
+-- handover_identification_talk 식별 화면에서 관리자와 나눈 대화(바뀐 내용 change 포함)
+-- ============================================================================
+
+create table if not exists public.handover_case_categories (
+    tenant_id     text        not null default public.tenant_id(),
+    case_id       text        not null,  -- origin_room_id
+    category      text        not null,
+    category_by   text        not null default 'ai',
+    request       text        null,      -- 판단에 쓴 요청(처음 요청한 대화) — 관리자 예시로 다시 쓴다
+    created_at    timestamptz not null default now(),
+    updated_at    timestamptz not null default now(),
+    constraint handover_case_categories_pkey primary key (tenant_id, case_id),
+    constraint handover_case_categories_by_check check (category_by in ('ai', 'admin')),
+    constraint handover_case_categories_tenant_id_fkey foreign key (tenant_id)
+        references public.tenants (id) on update cascade on delete cascade
+) tablespace pg_default;
+
+create table if not exists public.handover_process_decisions (
+    tenant_id        text        not null default public.tenant_id(),
+    process_key      text        not null,
+    category         text        null,
+    core_activities  jsonb       not null default '[]'::jsonb,
+    confirmed_steps  jsonb       not null default '[]'::jsonb,
+    case_ids         jsonb       not null default '[]'::jsonb,
+    exclude          jsonb       not null default '[]'::jsonb,
+    status           text        not null default 'shown',
+    decided_by       text        null,
+    decided_at       timestamptz null,
+    created_at       timestamptz not null default now(),
+    updated_at       timestamptz not null default now(),
+    constraint handover_process_decisions_pkey primary key (tenant_id, process_key),
+    constraint handover_process_decisions_status_check check (status in ('shown', 'confirmed')),
+    constraint handover_process_decisions_tenant_id_fkey foreign key (tenant_id)
+        references public.tenants (id) on update cascade on delete cascade
+) tablespace pg_default;
+
+create table if not exists public.handover_identification_talk (
+    id           uuid        not null default gen_random_uuid(),
+    tenant_id    text        not null default public.tenant_id(),
+    process_key  text        not null,
+    role         text        not null,  -- admin | assistant
+    text         text        not null,
+    change       jsonb       null,
+    applied      boolean     not null default false,
+    user_id      text        null,
+    created_at   timestamptz not null default now(),
+    constraint handover_identification_talk_pkey primary key (id),
+    constraint handover_identification_talk_role_check check (role in ('admin', 'assistant')),
+    constraint handover_identification_talk_tenant_id_fkey foreign key (tenant_id)
+        references public.tenants (id) on update cascade on delete cascade
+) tablespace pg_default;
+create index if not exists idx_handover_identification_talk_key
+    on public.handover_identification_talk (tenant_id, process_key, created_at);
+
+drop trigger if exists handover_case_categories_updated_at on public.handover_case_categories;
+create trigger handover_case_categories_updated_at
+    before update on public.handover_case_categories
+    for each row execute function public.update_updated_at_column();
+drop trigger if exists handover_process_decisions_updated_at on public.handover_process_decisions;
+create trigger handover_process_decisions_updated_at
+    before update on public.handover_process_decisions
+    for each row execute function public.update_updated_at_column();
+
+-- RLS (handover_events 와 같다: 같은 테넌트만)
+alter table public.handover_case_categories enable row level security;
+alter table public.handover_process_decisions enable row level security;
+alter table public.handover_identification_talk enable row level security;
+
+DROP POLICY IF EXISTS handover_case_categories_tenant_policy ON public.handover_case_categories;
+create policy handover_case_categories_tenant_policy on public.handover_case_categories
+    for all to authenticated using (tenant_id = public.tenant_id()) with check (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS handover_process_decisions_tenant_policy ON public.handover_process_decisions;
+create policy handover_process_decisions_tenant_policy on public.handover_process_decisions
+    for all to authenticated using (tenant_id = public.tenant_id()) with check (tenant_id = public.tenant_id());
+DROP POLICY IF EXISTS handover_identification_talk_tenant_policy ON public.handover_identification_talk;
+create policy handover_identification_talk_tenant_policy on public.handover_identification_talk
+    for all to authenticated using (tenant_id = public.tenant_id()) with check (tenant_id = public.tenant_id());
+
+
+-- ============================================================================
 -- 핸드오버 스레드 상관키(origin_room_id)
 --
 -- 이메일 스레드가 References/In-Reply-To 로 루트 Message-ID 를 앞으로 끌고 가듯,
