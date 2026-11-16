@@ -3838,7 +3838,7 @@ create policy handover_events_delete_policy on public.handover_events
 --   core_activities  관리자가 확정한 필수 단계(confirmed_steps 에 있는 단계만 확정, 나머지는 빈도 초안)
 --   case_ids         관리자가 확인한 사례 — 묶음의 모양은 이 사례로만 그린다
 --   exclude          이 묶음이 아니라고 한 사례
---   status           shown(화면에 보임) | confirmed(관리자가 맞다고 함)
+--   status           shown(화면에 보임 = 추천) | held(관리자가 보류) | confirmed(예전 값, 추천으로 본다)
 -- handover_identification_talk 식별 화면에서 관리자와 나눈 대화(바뀐 내용 change 포함)
 -- ============================================================================
 
@@ -3870,10 +3870,15 @@ create table if not exists public.handover_process_decisions (
     created_at       timestamptz not null default now(),
     updated_at       timestamptz not null default now(),
     constraint handover_process_decisions_pkey primary key (tenant_id, process_key),
-    constraint handover_process_decisions_status_check check (status in ('shown', 'confirmed')),
+    constraint handover_process_decisions_status_check check (status in ('shown', 'confirmed', 'held')),
     constraint handover_process_decisions_tenant_id_fkey foreign key (tenant_id)
         references public.tenants (id) on update cascade on delete cascade
 ) tablespace pg_default;
+
+-- 결정 상태에 held(보류)를 더한다(2026-11-12). 이미 만들어진 테이블에도 맞도록 제약을 다시 건다
+alter table public.handover_process_decisions drop constraint if exists handover_process_decisions_status_check;
+alter table public.handover_process_decisions add constraint handover_process_decisions_status_check
+    check (status in ('shown', 'confirmed', 'held'));
 
 create table if not exists public.handover_identification_talk (
     id           uuid        not null default gen_random_uuid(),

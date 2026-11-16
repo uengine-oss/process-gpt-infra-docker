@@ -2630,3 +2630,13 @@ CREATE INDEX IF NOT EXISTS handover_events_group_idx
     WHERE group_id IS NOT NULL;
 
 ALTER TABLE public.handover_events ADD COLUMN IF NOT EXISTS base_commit_id uuid;
+
+
+-- ===============================================
+-- handover_process_decisions: 결정 상태에 held(보류)
+-- ===============================================
+-- 프로세스 식별의 업무 상태를 Lite 와 같은 결정 구조(추천 → 제안 중 → 정식 등록, 보류)로 맞췄다.
+-- init.sql 에도 같은 ALTER 가 있다. 여기는 init.sql 을 다시 돌리지 않는 설치를 위한 것이다.
+ALTER TABLE public.handover_process_decisions DROP CONSTRAINT IF EXISTS handover_process_decisions_status_check;
+ALTER TABLE public.handover_process_decisions ADD CONSTRAINT handover_process_decisions_status_check
+    CHECK (status IN ('shown', 'confirmed', 'held'));
