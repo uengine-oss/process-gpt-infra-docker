@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Process-GPT 로그인 코드</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc;">
+    <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">
+                Process-GPT 로그인 코드
+            </h1>
+        </div>
+
+        <!-- Content -->
+        <div style="padding: 40px 30px;">
+            <h2 style="color: #2d3748; margin: 0 0 20px 0; font-size: 22px; font-weight: 600;">
+                로그인 인증 코드
+            </h2>
+
+            <p style="color: #4a5568; line-height: 1.6; margin: 0 0 30px 0; font-size: 16px;">
+                <strong>{{ .Email }}</strong> 계정으로 로그인을 요청하셨습니다.<br>
+                아래 6자리 코드를 로그인 화면에 입력해 주세요.
+            </p>
+
+            <!-- OTP Code -->
+            <div style="text-align: center; margin: 40px 0;">
+                <div style="display: inline-block;
+                            background-color: #f7fafc;
+                            color: #4f46e5;
+                            padding: 16px 32px;
+                            border: 2px solid #4f46e5;
+                            border-radius: 8px;
+                            font-family: 'SF Mono', Menlo, Consolas, monospace;
+                            font-weight: 700;
+                            font-size: 32px;
+                            letter-spacing: 8px;
+                            box-shadow: 0 4px 14px 0 rgba(79, 70, 229, 0.2);">
+                    {{ .Token }}
+                </div>
+            </div>
+
+            <div style="background-color: #f7fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #4f46e5;">
+                <p style="color: #2d3748; margin: 0; font-size: 14px; line-height: 1.5;">
+                    <strong>안내사항</strong><br>
+                    • 코드는 한 번만 쓸 수 있으며, 유효 시간이 지나면 로그인 화면에서 다시 요청해 주세요<br>
+                    • 코드를 다른 사람에게 알려주지 마세요<br>
+                    • 본인이 요청하지 않은 메일이라면 무시하셔도 됩니다<br>
+                    • 문의: 관리자(help@uengine.org)
+                </p>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="background-color: #f8fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+            <p style="color: #718096; margin: 0; font-size: 14px;">
+                Process-GPT Team<br>
+                <span style="color: #a0aec0;">이 이메일은 자동으로 발송되었습니다.</span>
+            </p>
+        </div>
+
+    </div>
+</body>
+</html>
