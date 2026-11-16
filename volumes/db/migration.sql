@@ -2640,3 +2640,10 @@ ALTER TABLE public.handover_events ADD COLUMN IF NOT EXISTS base_commit_id uuid;
 ALTER TABLE public.handover_process_decisions DROP CONSTRAINT IF EXISTS handover_process_decisions_status_check;
 ALTER TABLE public.handover_process_decisions ADD CONSTRAINT handover_process_decisions_status_check
     CHECK (status IN ('shown', 'confirmed', 'held'));
+
+
+-- ===============================================
+-- handover_process_decisions: 단계 진행 방식(step_rules)
+-- ===============================================
+-- 관리자가 정한 필수·옵션·택일·반복과 분기 조건. 프로세스 정의의 게이트웨이·조건이 된다.
+ALTER TABLE public.handover_process_decisions ADD COLUMN IF NOT EXISTS step_rules jsonb NOT NULL DEFAULT '{}'::jsonb;

@@ -3839,6 +3839,8 @@ create policy handover_events_delete_policy on public.handover_events
 --   case_ids         관리자가 확인한 사례 — 묶음의 모양은 이 사례로만 그린다
 --   exclude          이 묶음이 아니라고 한 사례
 --   status           shown(화면에 보임 = 추천) | held(관리자가 보류) | confirmed(예전 값, 추천으로 본다)
+--   step_rules       단계 진행 방식 {단계: 규칙} — 정의의 게이트웨이·분기 조건이 된다(process-miner step_rules)
+--                    required | {kind: optional, skip_when} | {kind: choice, when} | {kind: loop, redo_when}, by admin|cases
 -- handover_identification_talk 식별 화면에서 관리자와 나눈 대화(바뀐 내용 change 포함)
 -- ============================================================================
 
@@ -3879,6 +3881,9 @@ create table if not exists public.handover_process_decisions (
 alter table public.handover_process_decisions drop constraint if exists handover_process_decisions_status_check;
 alter table public.handover_process_decisions add constraint handover_process_decisions_status_check
     check (status in ('shown', 'confirmed', 'held'));
+
+-- 단계 진행 방식(필수·옵션·택일·반복과 분기 조건, 2026-11-16). 이미 만들어진 테이블에도 맞도록 칸을 더한다
+alter table public.handover_process_decisions add column if not exists step_rules jsonb not null default '{}'::jsonb;
 
 create table if not exists public.handover_identification_talk (
     id           uuid        not null default gen_random_uuid(),
